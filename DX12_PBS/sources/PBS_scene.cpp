@@ -1,0 +1,448 @@
+#include "PBS_scene.h"
+
+#include <DirectXTex.h>
+
+#include "core/DXSampleHelper.h"
+#include "core/DXSample.h"
+#include "frame_resource.h"
+#include "sample_assets.h"
+
+PBSScene::PBSScene(UINT frameCount, DXSample* pSample) :
+  m_frameCount(frameCount),
+  m_pSample(pSample) {
+  m_frameResources.resize(frameCount);
+  m_renderTargets.resize(frameCount);
+}
+
+PBSScene::~PBSScene() {
+}
+
+void PBSScene::SetFrameIndex(UINT frameIndex) {
+  m_frameIndex = frameIndex;
+  m_pCurrentFrameResource = m_frameResources[m_frameIndex].get();
+}
+
+void PBSScene::Initialize(ID3D12Device* pDevice, ID3D12CommandQueue* pDirectCommandQueue, ID3D12GraphicsCommandList* pCommandList, UINT frameIndex) {
+  CreateDescriptorHeaps(pDevice);
+  CreateRootSignatures(pDevice);
+  CreatePipelineStates(pDevice);
+  CreateFrameResources(pDevice, pDirectCommandQueue);
+  CreateCommandLists(pDevice);
+
+  CreateAssetResources(pDevice, pCommandList);
+
+  SetFrameIndex(frameIndex);
+}
+
+void PBSScene::LoadSizeDependentResources(ID3D12Device* pDevice, ComPtr<ID3D12Resource>* ppRenderTargets, UINT width, UINT height) {
+  m_viewport.Width = static_cast<float>(width);
+  m_viewport.Height = static_cast<float>(height);
+
+  m_scissorRect.left = 0;
+  m_scissorRect.top = 0;
+  m_scissorRect.right = static_cast<LONG>(width);
+  m_scissorRect.bottom = static_cast<LONG>(height);
+
+  // Create render target views (RTVs).
+  {
+    CD3DX12_CPU_DESCRIPTOR_HANDLE rtvCpuHandle(m_rtvHeap->GetCPUDescriptorHandleForHeapStart());
+    for (UINT i = 0; i < m_frameCount; i++)
+    {
+      m_renderTargets[i] = ppRenderTargets[i];
+      pDevice->CreateRenderTargetView(m_renderTargets[i].Get(), nullptr, rtvCpuHandle);
+      rtvCpuHandle.Offset(1, m_rtvDescriptorSize);
+      NAME_D3D12_OBJECT_INDEXED(m_renderTargets, i);
+    }
+  }
+}
+
+void PBSScene::Update() {
+  UpdateConstantBuffers();
+  CommitConstantBuffers();
+}
+
+void PBSScene::Render(ID3D12CommandQueue* pCommandQueue) {
+  BeginFrame();
+
+  EndFrame();
+
+  ThrowIfFailed(m_commandList->Close());
+  ID3D12CommandList* command_lists[] = { m_commandList.Get() };
+  pCommandQueue->ExecuteCommandLists(_countof(command_lists), command_lists);
+}
+
+void PBSScene::EquirectangularToCubemap(ID3D12CommandQueue* pCommandQueue) {
+  m_pCurrentFrameResource->m_commandAllocator->Reset();
+  ThrowIfFailed(m_commandList->Reset(m_pCurrentFrameResource->m_commandAllocator.Get(), m_pipelineStateEquirectangularToCubemap.Get()));
+
+  // Set descriptor heaps.
+  ID3D12DescriptorHeap* ppHeaps[] = { m_cbvSrvHeap.Get() };
+  m_commandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
+
+  m_commandList->SetGraphicsRootSignature(m_rootSignatureEquirectangularToCubemap.Get());
+  m_commandList->SetGraphicsRootDescriptorTable(1, m_cbvSrvHeap->GetGPUDescriptorHandleForHeapStart());
+
+  m_commandList->IASetVertexBuffers(0, 1, &m_vertexBufferViewCube);
+  m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+  UINT cubeMapWidth = 512; UINT cubeMapHeight = 512;
+  CD3DX12_VIEWPORT viewport{ 0.f, 0.f, static_cast<float>(cubeMapWidth), static_cast<float>(cubeMapHeight) };
+  CD3DX12_RECT scissorRect{ 0, 0, static_cast<LONG>(cubeMapWidth), static_cast<LONG>(cubeMapHeight) };
+  m_commandList->RSSetViewports(1, &viewport);
+  m_commandList->RSSetScissorRects(1, &scissorRect);
+
+  Camera camera;
+  XMVECTOR eye = XMVectorSet(0.0f, 0.0, 0.0, 1.0f);
+  float cameraTargets[] = {
+  1.0f, 0.0f, 0.0f,
+  -1.0f, 0.0f, 0.0f,
+  0.0f, 1.0f, 0.0f,
+  0.0f, -1.0f, 0.0f,
+  0.0f, 0.0f, 1.0f,
+  0.0f, 0.0f, -1.0f
+  };
+  float cameraUps[] = {
+    0.0f, -1.0f,  0.0f,
+    0.0f, -1.0f,  0.0f,
+    0.0f,  0.0f,  1.0f,
+    0.0f,  0.0f, -1.0f,
+    0.0f, -1.0f,  0.0f,
+    0.0f, -1.0f,  0.0f
+  };
+  std::vector<EquirectangularToCubemapConstantBuffer> constantBuffers(6);
+  for (UINT16 i = 0; i < kCubeMapArraySize; ++i) {
+    XMVECTOR at = XMVectorSet(cameraTargets[3 * i], cameraTargets[3 * i + 1], cameraTargets[3 * i + 2], 0.0f);
+    XMVECTOR up = XMVectorSet(cameraUps[3 * i], cameraUps[3 * i + 1], cameraUps[3 * i + 2], 1.0f);
+    camera.Set(eye, at, up);
+    camera.Get3DViewProjMatrices(&constantBuffers[i].view, &constantBuffers[i].projection,
+      90.0f, static_cast<float>(kCubeMapWidth), static_cast<float>(kCubeMapHeight), 0.1f, 10.0f);
+  }
+  size_t constantBufferSize = sizeof(EquirectangularToCubemapConstantBuffer);
+  memcpy(m_pCurrentFrameResource->m_pConstantBufferEquirectangularToCubemapWO, constantBuffers.data(), constantBufferSize * 6);
+  CD3DX12_CPU_DESCRIPTOR_HANDLE cubeMapRTVHandle(m_rtvHeap->GetCPUDescriptorHandleForHeapStart(), m_frameCount, m_rtvDescriptorSize);
+  for (UINT16 i = 0; i < kCubeMapArraySize; ++i) {
+    m_commandList->OMSetRenderTargets(1, &cubeMapRTVHandle, false, nullptr);
+    cubeMapRTVHandle.Offset(1, m_rtvDescriptorSize);
+
+    auto foo = m_pCurrentFrameResource->m_constantBufferEquirectangularToCubemap->GetGPUVirtualAddress() + i * constantBufferSize;
+    m_commandList->SetGraphicsRootConstantBufferView(0, 
+      m_pCurrentFrameResource->m_constantBufferEquirectangularToCubemap->GetGPUVirtualAddress() + i * constantBufferSize);
+
+    m_commandList->DrawInstanced(36, 1, 0, 0);
+  }
+
+  D3D12_RESOURCE_BARRIER cubeMapBarrier = CD3DX12_RESOURCE_BARRIER::Transition(m_cubeMap.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+  m_commandList->ResourceBarrier(1, &cubeMapBarrier);
+
+  ThrowIfFailed(m_commandList->Close());
+  ID3D12CommandList* command_lists[] = { m_commandList.Get() };
+  pCommandQueue->ExecuteCommandLists(_countof(command_lists), command_lists);
+}
+
+void PBSScene::CreateDescriptorHeaps(ID3D12Device* pDevice) {
+  // Describe and create a render target view (RTV) descriptor heap.
+  D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {};
+  rtvHeapDesc.NumDescriptors = GetNumRtvDescriptors();
+  rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+  rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+  ThrowIfFailed(pDevice->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&m_rtvHeap)));
+  NAME_D3D12_OBJECT(m_rtvHeap);
+
+  // Describe and create a shader resource view (SRV) and constant 
+  // buffer view (CBV) descriptor heap.  
+  D3D12_DESCRIPTOR_HEAP_DESC cbvSrvHeapDesc = {};
+  cbvSrvHeapDesc.NumDescriptors = GetNumCbvSrvUavDescriptors();
+  cbvSrvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+  cbvSrvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+  ThrowIfFailed(pDevice->CreateDescriptorHeap(&cbvSrvHeapDesc, IID_PPV_ARGS(&m_cbvSrvHeap)));
+  NAME_D3D12_OBJECT(m_cbvSrvHeap);
+
+  // Get descriptor sizes for the current device.
+  m_rtvDescriptorSize = pDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+  m_cbvSrvDescriptorSize = pDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+}
+
+void PBSScene::CreateRootSignatures(ID3D12Device* pDevice) {
+  D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData = {};
+
+  // This is the highest version the sample supports. If CheckFeatureSupport succeeds, the HighestVersion returned will not be greater than this.
+  featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_1;
+
+  if (FAILED(pDevice->CheckFeatureSupport(D3D12_FEATURE_ROOT_SIGNATURE, &featureData, sizeof(featureData))))
+  {
+    featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_0;
+  }
+
+  // Create a root signature for the equirectangular to cubemap.
+  {
+    CD3DX12_DESCRIPTOR_RANGE1 ranges[1]{};
+    ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
+
+    CD3DX12_ROOT_PARAMETER1 rootParameters[2]{}; // Performance tip: Order root parameters from most frequently accessed to least frequently accessed.
+    rootParameters[0].InitAsConstantBufferView(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_DATA_STATIC, D3D12_SHADER_VISIBILITY_VERTEX);
+    rootParameters[1].InitAsDescriptorTable(1, &ranges[0], D3D12_SHADER_VISIBILITY_PIXEL);
+
+    CD3DX12_STATIC_SAMPLER_DESC static_sampler_desc{};
+    static_sampler_desc.Init(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR,
+      D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+      0.0f, 0, D3D12_COMPARISON_FUNC_NEVER, D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK,
+      0.0f, D3D12_FLOAT32_MAX,
+      D3D12_SHADER_VISIBILITY_PIXEL, 0);
+
+    CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDesc{};
+    rootSignatureDesc.Init_1_1(_countof(rootParameters), rootParameters, 1, &static_sampler_desc,
+      D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
+      D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS | // Performance tip: Limit root signature access when possible.
+      D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
+      D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS);
+
+    ComPtr<ID3DBlob> signature;
+    ComPtr<ID3DBlob> error;
+    ThrowIfFailed(D3DX12SerializeVersionedRootSignature(&rootSignatureDesc, featureData.HighestVersion, &signature, &error));
+    ThrowIfFailed(pDevice->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&m_rootSignatureEquirectangularToCubemap)));
+    NAME_D3D12_OBJECT(m_rootSignatureEquirectangularToCubemap);
+  }
+}
+
+void PBSScene::CreatePipelineStates(ID3D12Device* pDevice) {
+  // Create the equirectangular to cubemap pipeline state.
+  {
+    ComPtr<ID3DBlob> vertexShader;
+    ComPtr<ID3DBlob> pixelShader;
+    vertexShader = CompileShader(m_pSample->GetAssetFullPath(L"assets/equirectangular_to_cubemap.hlsl").c_str(), nullptr, "VSMain", "vs_5_0");
+    pixelShader = CompileShader(m_pSample->GetAssetFullPath(L"assets/equirectangular_to_cubemap.hlsl").c_str(), nullptr, "PSMain", "ps_5_0");
+
+    const D3D12_INPUT_ELEMENT_DESC vertexAttributeDesc[] = {
+      {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+      {"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+      {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}
+    };
+    D3D12_INPUT_LAYOUT_DESC inputLayoutDesc;
+    inputLayoutDesc.pInputElementDescs = vertexAttributeDesc;
+    inputLayoutDesc.NumElements = _countof(vertexAttributeDesc);
+    
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
+    psoDesc.InputLayout = inputLayoutDesc;
+    psoDesc.pRootSignature = m_rootSignatureEquirectangularToCubemap.Get();
+    psoDesc.VS = CD3DX12_SHADER_BYTECODE(vertexShader.Get());
+    psoDesc.PS = CD3DX12_SHADER_BYTECODE(pixelShader.Get());
+    psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+    psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+    //psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+    psoDesc.SampleMask = UINT_MAX;
+    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    psoDesc.NumRenderTargets = 1;
+    psoDesc.RTVFormats[0] = DXGI_FORMAT_R32G32B32A32_FLOAT;
+    psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+    psoDesc.SampleDesc.Count = 1;
+
+    ThrowIfFailed(pDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_pipelineStateEquirectangularToCubemap)));
+    NAME_D3D12_OBJECT(m_pipelineStateEquirectangularToCubemap);
+  }
+}
+
+void PBSScene::CreateFrameResources(ID3D12Device* pDevice, ID3D12CommandQueue* pCommandQueue) {
+  for (UINT i = 0; i < m_frameCount; i++) {
+    m_frameResources[i] = std::make_unique<FrameResource>(pDevice, pCommandQueue);
+  }
+}
+
+void PBSScene::CreateCommandLists(ID3D12Device* pDevice) {
+  // Temporarily use a frame resource's command allocator to create command lists.
+  ID3D12CommandAllocator* pCommandAllocator = m_frameResources[0]->m_commandAllocator.Get();
+  ThrowIfFailed(pDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, pCommandAllocator, nullptr, IID_PPV_ARGS(&m_commandList)));
+  ThrowIfFailed(m_commandList->Close());
+  NAME_D3D12_OBJECT(m_commandList);
+}
+
+void PBSScene::CreateAssetResources(ID3D12Device* pDevice, ID3D12GraphicsCommandList* pCommandList) {
+  // Create the cube vertex buffer
+  {
+    CubeModel cube_model;
+    size_t vertexDataSize = cube_model.GetVertexDataSize();
+
+    D3D12_HEAP_PROPERTIES defaultHeapProperty = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+    D3D12_RESOURCE_DESC bufferResourceDesc = CD3DX12_RESOURCE_DESC::Buffer(vertexDataSize);
+    ThrowIfFailed(pDevice->CreateCommittedResource(
+      &defaultHeapProperty,
+      D3D12_HEAP_FLAG_NONE,
+      &bufferResourceDesc,
+      D3D12_RESOURCE_STATE_COPY_DEST,
+      nullptr,
+      IID_PPV_ARGS(&m_vertexBufferCube)));
+    NAME_D3D12_OBJECT(m_vertexBufferCube);
+
+    D3D12_HEAP_PROPERTIES uploadHeapProperty = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+    ThrowIfFailed(pDevice->CreateCommittedResource(
+      &uploadHeapProperty,
+      D3D12_HEAP_FLAG_NONE,
+      &bufferResourceDesc,
+      D3D12_RESOURCE_STATE_GENERIC_READ,
+      nullptr,
+      IID_PPV_ARGS(&m_vertexBufferCubeUpload)));
+
+    std::unique_ptr<Model::Vertex[]> vertices = cube_model.GetVertexData();
+    // Copy data to the upload heap and then schedule a copy 
+        // from the upload heap to the vertex buffer.
+    D3D12_SUBRESOURCE_DATA vertexData = {};
+    vertexData.pData = vertices.get();
+    vertexData.RowPitch = vertexDataSize;
+    vertexData.SlicePitch = vertexDataSize;
+
+    UpdateSubresources<1>(pCommandList, m_vertexBufferCube.Get(), m_vertexBufferCubeUpload.Get(), 0, 0, 1, &vertexData);
+
+    // Initialize the vertex buffer view.
+    m_vertexBufferViewCube.BufferLocation = m_vertexBufferCube->GetGPUVirtualAddress();
+    m_vertexBufferViewCube.SizeInBytes = static_cast<UINT>(vertexDataSize);
+    m_vertexBufferViewCube.StrideInBytes = static_cast<UINT>(Model::GetVertexStride());
+  }
+
+  // Create HDR texture and cubemap resource.
+  {
+    // Get a handle to the start of the descriptor heap.
+    CD3DX12_CPU_DESCRIPTOR_HANDLE cbvSrvCpuHandle(m_cbvSrvHeap->GetCPUDescriptorHandleForHeapStart());
+    CD3DX12_GPU_DESCRIPTOR_HANDLE cbvSrvGpuHandle(m_cbvSrvHeap->GetGPUDescriptorHandleForHeapStart());
+
+    // Load HDR image file.
+    TexMetadata metaData;
+    ScratchImage image;
+    DirectX::LoadFromHDRFile(m_pSample->GetAssetFullPath(L"assets/Newport_Loft_Ref.hdr").c_str(), &metaData, image);
+
+    // Describe and create a Texture2D.    
+    CD3DX12_RESOURCE_DESC texDesc(
+      static_cast<D3D12_RESOURCE_DIMENSION>(metaData.dimension),
+      0,
+      metaData.width,
+      static_cast<UINT>(metaData.height),
+      static_cast<UINT16>(metaData.arraySize),
+      static_cast<UINT16>(metaData.mipLevels),
+      metaData.format,
+      1,
+      0,
+      D3D12_TEXTURE_LAYOUT_UNKNOWN,
+      D3D12_RESOURCE_FLAG_NONE);
+
+    D3D12_HEAP_PROPERTIES defaultHeapProperty = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+    ThrowIfFailed(pDevice->CreateCommittedResource(
+      &defaultHeapProperty,
+      D3D12_HEAP_FLAG_NONE,
+      &texDesc,
+      D3D12_RESOURCE_STATE_COPY_DEST,
+      nullptr,
+      IID_PPV_ARGS(&m_HDRTexture)));
+    NAME_D3D12_OBJECT(m_HDRTexture);
+
+    {
+      const UINT subresourceCount = texDesc.DepthOrArraySize * texDesc.MipLevels;
+      UINT64 uploadBufferSize = GetRequiredIntermediateSize(m_HDRTexture.Get(), 0, subresourceCount);
+      D3D12_HEAP_PROPERTIES uploadHeapProperty = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+      D3D12_RESOURCE_DESC bufferResourceDesc = CD3DX12_RESOURCE_DESC::Buffer(uploadBufferSize);
+      ThrowIfFailed(pDevice->CreateCommittedResource(
+        &uploadHeapProperty,
+        D3D12_HEAP_FLAG_NONE,
+        &bufferResourceDesc,
+        D3D12_RESOURCE_STATE_GENERIC_READ,
+        nullptr,
+        IID_PPV_ARGS(&m_HDRTextureUpload)));
+
+      // Copy data to the intermediate upload heap and then schedule a copy
+      // from the upload heap to the Texture2D.
+      D3D12_SUBRESOURCE_DATA textureData = {};
+      textureData.pData = image.GetPixels();
+      textureData.RowPitch = image.GetImages()->rowPitch;
+      textureData.SlicePitch = image.GetImages()->slicePitch;
+
+      UpdateSubresources(pCommandList, m_HDRTexture.Get(), m_HDRTextureUpload.Get(), 0, 0, subresourceCount, &textureData);
+
+      // Performance tip: You can avoid some resource barriers by relying on resource state promotion and decay.
+      // Resources accessed on a copy queue will decay back to the COMMON after ExecuteCommandLists()
+      // completes on the GPU. Search online for "D3D12 Implicit State Transitions" for more details. 
+    }
+
+    // Describe and create an SRV.
+    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+    srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    srvDesc.Format = metaData.format;
+    srvDesc.Texture2D.MipLevels = static_cast<UINT>(metaData.mipLevels);
+    srvDesc.Texture2D.MostDetailedMip = 0;
+    srvDesc.Texture2D.ResourceMinLODClamp = 0.0f;
+    pDevice->CreateShaderResourceView(m_HDRTexture.Get(), &srvDesc, cbvSrvCpuHandle);
+    cbvSrvCpuHandle.Offset(m_cbvSrvDescriptorSize);
+    cbvSrvGpuHandle.Offset(m_cbvSrvDescriptorSize);
+
+
+    // *** cubemap ***
+    CD3DX12_RESOURCE_DESC cubeMapDesc(
+      D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+      0,
+      kCubeMapWidth,
+      kCubeMapHeight,
+      kCubeMapArraySize,
+      1,
+      metaData.format,
+      1,
+      0,
+      D3D12_TEXTURE_LAYOUT_UNKNOWN,
+      D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);
+
+    D3D12_CLEAR_VALUE cubeMapClearValue = CD3DX12_CLEAR_VALUE(cubeMapDesc.Format, s_clearColor);
+    ThrowIfFailed(pDevice->CreateCommittedResource(
+      &defaultHeapProperty,
+      D3D12_HEAP_FLAG_NONE,
+      &cubeMapDesc,
+      D3D12_RESOURCE_STATE_RENDER_TARGET,
+      &cubeMapClearValue,
+      IID_PPV_ARGS(&m_cubeMap)));
+    NAME_D3D12_OBJECT(m_cubeMap);
+
+    // Describe and create an cubemap SRV.
+    D3D12_SHADER_RESOURCE_VIEW_DESC cubeMapSrvDesc = {};
+    cubeMapSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBE;
+    cubeMapSrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    cubeMapSrvDesc.Format = cubeMapDesc.Format;
+    cubeMapSrvDesc.TextureCube.MipLevels = 1;
+    cubeMapSrvDesc.TextureCube.MostDetailedMip = 0;
+    cubeMapSrvDesc.TextureCube.ResourceMinLODClamp = 0.0f;
+    pDevice->CreateShaderResourceView(m_cubeMap.Get(), &cubeMapSrvDesc, cbvSrvCpuHandle);
+    cbvSrvCpuHandle.Offset(m_cbvSrvDescriptorSize);
+    cbvSrvGpuHandle.Offset(m_cbvSrvDescriptorSize);
+
+    // Create RTV to each cube face.
+    D3D12_RENDER_TARGET_VIEW_DESC cubeMapRTVDesc{};
+    cubeMapRTVDesc.Format = cubeMapDesc.Format;
+    cubeMapRTVDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DARRAY;
+    cubeMapRTVDesc.Texture2DArray.MipSlice = 0;
+    cubeMapRTVDesc.Texture2DArray.PlaneSlice = 0;
+    cubeMapRTVDesc.Texture2DArray.ArraySize = 1;
+    CD3DX12_CPU_DESCRIPTOR_HANDLE rtvCpuHandle(m_rtvHeap->GetCPUDescriptorHandleForHeapStart(), m_frameCount, m_rtvDescriptorSize);
+    for (UINT16 i = 0; i < kCubeMapArraySize; ++i) {
+      cubeMapRTVDesc.Texture2DArray.FirstArraySlice = i;
+      pDevice->CreateRenderTargetView(m_cubeMap.Get(), &cubeMapRTVDesc, rtvCpuHandle);
+      rtvCpuHandle.Offset(1, m_rtvDescriptorSize);
+    }
+  }
+}
+
+void PBSScene::UpdateConstantBuffers() {
+}
+
+void PBSScene::CommitConstantBuffers() {
+}
+
+void PBSScene::BeginFrame() {
+  m_pCurrentFrameResource->m_commandAllocator->Reset();
+  // Reset the command list.
+  ThrowIfFailed(m_commandList->Reset(m_pCurrentFrameResource->m_commandAllocator.Get(), nullptr));
+  // Transition back-buffer to a writable state for rendering.
+  D3D12_RESOURCE_BARRIER backBufferBarrier = CD3DX12_RESOURCE_BARRIER::Transition(m_renderTargets[m_frameIndex].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
+  m_commandList->ResourceBarrier(1, &backBufferBarrier);
+  const FLOAT clearColor[] = { 0.0f, 1.0f, 0.0f, 1.0f };
+  m_commandList->ClearRenderTargetView(GetCurrentBackBufferRtvCpuHandle(), clearColor, 0, nullptr);
+}
+
+void PBSScene::EndFrame() {
+  // Transition back-buffer to a writable state for rendering.
+  D3D12_RESOURCE_BARRIER backBufferBarrier = CD3DX12_RESOURCE_BARRIER::Transition(m_renderTargets[m_frameIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
+  m_commandList->ResourceBarrier(1, &backBufferBarrier);
+}
