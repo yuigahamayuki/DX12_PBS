@@ -49,12 +49,18 @@
     <ClInclude Include="sources\util\Camera.h">
       <Filter>util</Filter>
     </ClInclude>
+    <ClInclude Include="sources\util\StepTimer.h">
+      <Filter>util</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <CopyFileToFolders Include="assets\equirectangular_to_cubemap.hlsl">
       <Filter>assets</Filter>
     </CopyFileToFolders>
     <CopyFileToFolders Include="assets\Newport_Loft_Ref.hdr">
+      <Filter>assets</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="assets\skybox.hlsl">
       <Filter>assets</Filter>
     </CopyFileToFolders>
   </ItemGroup>

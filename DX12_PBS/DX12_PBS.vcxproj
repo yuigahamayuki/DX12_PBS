@@ -150,6 +150,7 @@
     <ClInclude Include="sources\PBS_scene.h" />
     <ClInclude Include="sources\sample_assets.h" />
     <ClInclude Include="sources\util\Camera.h" />
+    <ClInclude Include="sources\util\StepTimer.h" />
   </ItemGroup>
   <ItemGroup>
     <CopyFileToFolders Include="assets\equirectangular_to_cubemap.hlsl">
@@ -159,6 +160,12 @@
   </ItemGroup>
   <ItemGroup>
     <CopyFileToFolders Include="assets\Newport_Loft_Ref.hdr">
+      <FileType>Document</FileType>
+      <DestinationFolders Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(OutDir)\%(RelativeDir)</DestinationFolders>
+    </CopyFileToFolders>
+  </ItemGroup>
+  <ItemGroup>
+    <CopyFileToFolders Include="assets\skybox.hlsl">
       <FileType>Document</FileType>
       <DestinationFolders Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(OutDir)\%(RelativeDir)</DestinationFolders>
     </CopyFileToFolders>

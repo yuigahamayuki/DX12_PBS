@@ -1,4 +1,4 @@
-cbuffer EquirectangularToCubemapConstantBuffer : register(b0)
+cbuffer ViewProjectionConstantBuffer : register(b0)
 {
   float4x4 view;
   float4x4 projection;

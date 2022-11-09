@@ -1,12 +1,20 @@
 #pragma once
 
 #include "core/stdafx.h"
+#include "sample_assets.h"
 #include "util/Camera.h"
 
 using Microsoft::WRL::ComPtr;
 
 class DXSample;
 class FrameResource;
+
+struct InputState {
+  bool rightArrowPressed;
+  bool leftArrowPressed;
+  bool upArrowPressed;
+  bool downArrowPressed;
+};
 
 class PBSScene {
 public:
@@ -21,13 +29,17 @@ public:
   void Initialize(ID3D12Device* pDevice, ID3D12CommandQueue* pDirectCommandQueue, ID3D12GraphicsCommandList* pCommandList, UINT frameIndex);
   void LoadSizeDependentResources(ID3D12Device* pDevice, ComPtr<ID3D12Resource>* ppRenderTargets, UINT width, UINT height);
 
-  void Update();
+  void Update(double elapsedTime);
+  void KeyDown(UINT8 key);
+  void KeyUp(UINT8 key);
 
   void Render(ID3D12CommandQueue* pCommandQueue);
 
   void EquirectangularToCubemap(ID3D12CommandQueue* pCommandQueue);
 
 private:
+  void InitializeCameraAndLights();
+
   void CreateDescriptorHeaps(ID3D12Device* pDevice);
   void CreateRootSignatures(ID3D12Device* pDevice);
   void CreatePipelineStates(ID3D12Device* pDevice);
@@ -37,6 +49,8 @@ private:
 
   void UpdateConstantBuffers();
   void CommitConstantBuffers();
+
+  void SkyboxPass();
 
   void BeginFrame();
   void EndFrame();
@@ -66,6 +80,7 @@ private:
   UINT m_frameIndex = 0;
   std::vector<std::unique_ptr<FrameResource>> m_frameResources;
   FrameResource* m_pCurrentFrameResource = nullptr;
+  ModelViewProjectionConstantBuffer m_MVPConstantBuffer;
 
   // Heap objects.
   ComPtr<ID3D12DescriptorHeap> m_rtvHeap;
@@ -76,6 +91,7 @@ private:
   // D3D objects.
   ComPtr<ID3D12RootSignature> m_rootSignatureEquirectangularToCubemap;
   ComPtr<ID3D12PipelineState> m_pipelineStateEquirectangularToCubemap;
+  ComPtr<ID3D12PipelineState> m_pipelineStateSkybox;
   ComPtr<ID3D12Resource> m_vertexBufferCube;
   ComPtr<ID3D12Resource> m_vertexBufferCubeUpload;
   D3D12_VERTEX_BUFFER_VIEW m_vertexBufferViewCube{};
@@ -89,4 +105,6 @@ private:
   CD3DX12_RECT m_scissorRect{};
 
   DXSample* m_pSample = nullptr;
+  Camera m_camera;
+  InputState m_keyboardInput;
 };

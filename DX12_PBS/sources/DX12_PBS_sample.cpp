@@ -18,7 +18,8 @@ void DX12PBSSample::OnInit() {
 }
 
 void DX12PBSSample::OnUpdate() {
-  m_scene->Update();
+  m_timer.Tick();
+  m_scene->Update(m_timer.GetElapsedSeconds());
 }
 
 void DX12PBSSample::OnRender() {
@@ -33,6 +34,14 @@ void DX12PBSSample::OnSizeChanged(UINT width, UINT height, bool minimized) {
 
 void DX12PBSSample::OnDestroy() {
   CloseHandle(m_fenceEvent);
+}
+
+void DX12PBSSample::OnKeyDown(UINT8 key) {
+  m_scene->KeyDown(key);
+}
+
+void DX12PBSSample::OnKeyUp(UINT8 key) {
+  m_scene->KeyUp(key);
 }
 
 void DX12PBSSample::LoadPipeline() {

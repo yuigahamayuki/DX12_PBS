@@ -4,10 +4,16 @@
 
 using namespace DirectX;
 
-struct EquirectangularToCubemapConstantBuffer {
+struct ViewProjectionConstantBuffer {
   XMFLOAT4X4 view;
   XMFLOAT4X4 projection;
   float padding[32];  // 256 bytes alignment
+};
+
+struct ModelViewProjectionConstantBuffer {
+  XMFLOAT4X4 model;
+  XMFLOAT4X4 view;
+  XMFLOAT4X4 projection;
 };
 
 class Model {

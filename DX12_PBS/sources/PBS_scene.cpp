@@ -56,13 +56,64 @@ void PBSScene::LoadSizeDependentResources(ID3D12Device* pDevice, ComPtr<ID3D12Re
   }
 }
 
-void PBSScene::Update() {
+void PBSScene::Update(double elapsedTime) {
+  const float angleChange = 2.0f * static_cast<float>(elapsedTime);
+
+  if (m_keyboardInput.leftArrowPressed)
+    m_camera.RotateAroundYAxis(-angleChange);
+  if (m_keyboardInput.rightArrowPressed)
+    m_camera.RotateAroundYAxis(angleChange);
+  if (m_keyboardInput.upArrowPressed)
+    m_camera.RotatePitch(-angleChange);
+  if (m_keyboardInput.downArrowPressed)
+    m_camera.RotatePitch(angleChange);
+
   UpdateConstantBuffers();
   CommitConstantBuffers();
 }
 
+void PBSScene::KeyDown(UINT8 key) {
+  switch (key) {
+  case VK_LEFT:
+    m_keyboardInput.leftArrowPressed = true;
+    break;
+  case VK_RIGHT:
+    m_keyboardInput.rightArrowPressed = true;
+    break;
+  case VK_UP:
+    m_keyboardInput.upArrowPressed = true;
+    break;
+  case VK_DOWN:
+    m_keyboardInput.downArrowPressed = true;
+    break;
+  default:
+    break;
+  }
+}
+
+void PBSScene::KeyUp(UINT8 key) {
+  switch (key) {
+  case VK_LEFT:
+    m_keyboardInput.leftArrowPressed = false;
+    break;
+  case VK_RIGHT:
+    m_keyboardInput.rightArrowPressed = false;
+    break;
+  case VK_UP:
+    m_keyboardInput.upArrowPressed = false;
+    break;
+  case VK_DOWN:
+    m_keyboardInput.downArrowPressed = false;
+    break;
+  default:
+    break;
+  }
+}
+
 void PBSScene::Render(ID3D12CommandQueue* pCommandQueue) {
   BeginFrame();
+
+  SkyboxPass();
 
   EndFrame();
 
@@ -109,7 +160,7 @@ void PBSScene::EquirectangularToCubemap(ID3D12CommandQueue* pCommandQueue) {
     0.0f, -1.0f,  0.0f,
     0.0f, -1.0f,  0.0f
   };
-  std::vector<EquirectangularToCubemapConstantBuffer> constantBuffers(6);
+  std::vector<ViewProjectionConstantBuffer> constantBuffers(6);
   for (UINT16 i = 0; i < kCubeMapArraySize; ++i) {
     XMVECTOR at = XMVectorSet(cameraTargets[3 * i], cameraTargets[3 * i + 1], cameraTargets[3 * i + 2], 0.0f);
     XMVECTOR up = XMVectorSet(cameraUps[3 * i], cameraUps[3 * i + 1], cameraUps[3 * i + 2], 1.0f);
@@ -117,7 +168,7 @@ void PBSScene::EquirectangularToCubemap(ID3D12CommandQueue* pCommandQueue) {
     camera.Get3DViewProjMatrices(&constantBuffers[i].view, &constantBuffers[i].projection,
       90.0f, static_cast<float>(kCubeMapWidth), static_cast<float>(kCubeMapHeight), 0.1f, 10.0f);
   }
-  size_t constantBufferSize = sizeof(EquirectangularToCubemapConstantBuffer);
+  size_t constantBufferSize = sizeof(ViewProjectionConstantBuffer);
   memcpy(m_pCurrentFrameResource->m_pConstantBufferEquirectangularToCubemapWO, constantBuffers.data(), constantBufferSize * 6);
   CD3DX12_CPU_DESCRIPTOR_HANDLE cubeMapRTVHandle(m_rtvHeap->GetCPUDescriptorHandleForHeapStart(), m_frameCount, m_rtvDescriptorSize);
   for (UINT16 i = 0; i < kCubeMapArraySize; ++i) {
@@ -137,6 +188,13 @@ void PBSScene::EquirectangularToCubemap(ID3D12CommandQueue* pCommandQueue) {
   ThrowIfFailed(m_commandList->Close());
   ID3D12CommandList* command_lists[] = { m_commandList.Get() };
   pCommandQueue->ExecuteCommandLists(_countof(command_lists), command_lists);
+}
+
+void PBSScene::InitializeCameraAndLights() {
+  XMVECTOR eye = XMVectorSet(0.0f, 2.0f, 3.0f, 1.0f);
+  XMVECTOR at = XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);
+  XMVECTOR up = XMVectorSet(0.0f, 0.951865792f, 0.306514263f, 1.0f);
+  m_camera.Set(eye, at, up);
 }
 
 void PBSScene::CreateDescriptorHeaps(ID3D12Device* pDevice) {
@@ -238,6 +296,41 @@ void PBSScene::CreatePipelineStates(ID3D12Device* pDevice) {
 
     ThrowIfFailed(pDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_pipelineStateEquirectangularToCubemap)));
     NAME_D3D12_OBJECT(m_pipelineStateEquirectangularToCubemap);
+  }
+
+  // Create the skybox pipeline state for rendering the skybox cubemap derived from equirectangular map.
+  {
+    ComPtr<ID3DBlob> vertexShader;
+    ComPtr<ID3DBlob> pixelShader;
+    vertexShader = CompileShader(m_pSample->GetAssetFullPath(L"assets/skybox.hlsl").c_str(), nullptr, "VSMain", "vs_5_0");
+    pixelShader = CompileShader(m_pSample->GetAssetFullPath(L"assets/skybox.hlsl").c_str(), nullptr, "PSMain", "ps_5_0");
+
+    const D3D12_INPUT_ELEMENT_DESC vertexAttributeDesc[] = {
+      {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+      {"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+      {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}
+    };
+    D3D12_INPUT_LAYOUT_DESC inputLayoutDesc;
+    inputLayoutDesc.pInputElementDescs = vertexAttributeDesc;
+    inputLayoutDesc.NumElements = _countof(vertexAttributeDesc);
+
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
+    psoDesc.InputLayout = inputLayoutDesc;
+    psoDesc.pRootSignature = m_rootSignatureEquirectangularToCubemap.Get();
+    psoDesc.VS = CD3DX12_SHADER_BYTECODE(vertexShader.Get());
+    psoDesc.PS = CD3DX12_SHADER_BYTECODE(pixelShader.Get());
+    psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+    psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+    //psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+    psoDesc.SampleMask = UINT_MAX;
+    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    psoDesc.NumRenderTargets = 1;
+    psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+    psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+    psoDesc.SampleDesc.Count = 1;
+
+    ThrowIfFailed(pDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_pipelineStateSkybox)));
+    NAME_D3D12_OBJECT(m_pipelineStateSkybox);
   }
 }
 
@@ -396,7 +489,7 @@ void PBSScene::CreateAssetResources(ID3D12Device* pDevice, ID3D12GraphicsCommand
       IID_PPV_ARGS(&m_cubeMap)));
     NAME_D3D12_OBJECT(m_cubeMap);
 
-    // Describe and create an cubemap SRV.
+    // Describe and create a cubemap SRV.
     D3D12_SHADER_RESOURCE_VIEW_DESC cubeMapSrvDesc = {};
     cubeMapSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBE;
     cubeMapSrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
@@ -425,9 +518,37 @@ void PBSScene::CreateAssetResources(ID3D12Device* pDevice, ID3D12GraphicsCommand
 }
 
 void PBSScene::UpdateConstantBuffers() {
+  const XMMATRIX identityMatrix = XMMatrixIdentity();
+  XMStoreFloat4x4(&m_MVPConstantBuffer.model, identityMatrix);
+
+  m_camera.Get3DViewProjMatrices(&m_MVPConstantBuffer.view, &m_MVPConstantBuffer.projection, 60.0f, m_viewport.Width, m_viewport.Height, 0.1f, 10.0f);
 }
 
 void PBSScene::CommitConstantBuffers() {
+  memcpy(m_pCurrentFrameResource->m_pConstantBufferMVPWO, &m_MVPConstantBuffer, sizeof(m_MVPConstantBuffer));
+}
+
+void PBSScene::SkyboxPass() {
+  m_commandList->SetGraphicsRootSignature(m_rootSignatureEquirectangularToCubemap.Get());
+  m_commandList->SetPipelineState(m_pipelineStateSkybox.Get());
+
+  // Set descriptor heaps.
+  ID3D12DescriptorHeap* ppHeaps[] = { m_cbvSrvHeap.Get() };
+  m_commandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
+
+  m_commandList->SetGraphicsRootConstantBufferView(0, m_pCurrentFrameResource->m_constantBufferMVP->GetGPUVirtualAddress());
+  CD3DX12_GPU_DESCRIPTOR_HANDLE skyboxGpuHandle(m_cbvSrvHeap->GetGPUDescriptorHandleForHeapStart());
+  skyboxGpuHandle.Offset(m_cbvSrvDescriptorSize);
+  m_commandList->SetGraphicsRootDescriptorTable(1, skyboxGpuHandle);
+
+  m_commandList->IASetVertexBuffers(0, 1, &m_vertexBufferViewCube);
+  m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+  m_commandList->RSSetViewports(1, &m_viewport);
+  m_commandList->RSSetScissorRects(1, &m_scissorRect);
+  CD3DX12_CPU_DESCRIPTOR_HANDLE renderTargetCpuHandle(GetCurrentBackBufferRtvCpuHandle());
+  m_commandList->OMSetRenderTargets(1, &renderTargetCpuHandle, FALSE, nullptr);
+
+  m_commandList->DrawInstanced(36, 1, 0, 0);
 }
 
 void PBSScene::BeginFrame() {

@@ -3,6 +3,7 @@
 #include <memory>
 
 #include "core/DXSample.h"
+#include "util/StepTimer.h"
 
 class PBSScene;
 
@@ -22,6 +23,8 @@ protected:
   void OnRender() override;
   void OnSizeChanged(UINT width, UINT height, bool minimized) override;
   void OnDestroy() override;
+  void OnKeyDown(UINT8 key) override;
+  void OnKeyUp(UINT8 key) override;
 
 private:
   void LoadPipeline();
@@ -47,4 +50,6 @@ private:
 
   // Scene rendering resources.
   std::unique_ptr<PBSScene> m_scene;
+
+  StepTimer m_timer;
 };

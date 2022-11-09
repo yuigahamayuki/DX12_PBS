@@ -11,6 +11,9 @@ public:
   ComPtr<ID3D12Resource> m_constantBufferEquirectangularToCubemap;
   void* m_pConstantBufferEquirectangularToCubemapWO = nullptr;
 
+  ComPtr<ID3D12Resource> m_constantBufferMVP;
+  void* m_pConstantBufferMVPWO = nullptr;
+
 public:
   FrameResource(ID3D12Device* pDevice, ID3D12CommandQueue* pCommandQueue);
   ~FrameResource();
