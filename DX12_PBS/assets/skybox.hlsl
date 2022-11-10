@@ -32,6 +32,9 @@ PSInput VSMain(float3 position : POSITION) {
 TextureCube SkyboxMap : register(t0);
 SamplerState SkyboxSampler : register(s0);
 
-float4 PSMain(PSInput input) : SV_TARGET{
-  return  SkyboxMap.Sample(SkyboxSampler, input.worldPos);
+float4 PSMain(PSInput input) : SV_TARGET {
+  float3 envColor = SkyboxMap.Sample(SkyboxSampler, input.worldPos).rgb;
+  envColor = envColor / (envColor + 1.0);
+  envColor = pow(envColor, 1.0 / 2.2);
+  return float4(envColor, 1.0);
 }
