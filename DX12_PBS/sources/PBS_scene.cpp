@@ -12,6 +12,8 @@ PBSScene::PBSScene(UINT frameCount, DXSample* pSample) :
   m_pSample(pSample) {
   m_frameResources.resize(frameCount);
   m_renderTargets.resize(frameCount);
+
+  InitializeCameraAndLights();
 }
 
 PBSScene::~PBSScene() {
@@ -147,16 +149,16 @@ void PBSScene::EquirectangularToCubemap(ID3D12CommandQueue* pCommandQueue) {
   float cameraTargets[] = {
   1.0f, 0.0f, 0.0f,
   -1.0f, 0.0f, 0.0f,
-  0.0f, 1.0f, 0.0f,
-  0.0f, -1.0f, 0.0f,
+  0.0f, -1.0f, 0.0f,  // cubemap +Y, but target is (0, -1, 0), because world y->-1, v->0 (equirectangular_to_cubemap.hlsl), samples the upper region of texture
+  0.0f, 1.0f, 0.0f,   // same as above
   0.0f, 0.0f, 1.0f,
   0.0f, 0.0f, -1.0f
   };
   float cameraUps[] = {
     0.0f, -1.0f,  0.0f,
     0.0f, -1.0f,  0.0f,
-    0.0f,  0.0f,  1.0f,
-    0.0f,  0.0f, -1.0f,
+    0.0f,  0.0f,  -1.0f,
+    0.0f,  0.0f, 1.0f,
     0.0f, -1.0f,  0.0f,
     0.0f, -1.0f,  0.0f
   };
@@ -191,9 +193,9 @@ void PBSScene::EquirectangularToCubemap(ID3D12CommandQueue* pCommandQueue) {
 }
 
 void PBSScene::InitializeCameraAndLights() {
-  XMVECTOR eye = XMVectorSet(0.0f, 2.0f, 3.0f, 1.0f);
+  XMVECTOR eye = XMVectorSet(0.0f, 0.0f, 3.0f, 1.0f);
   XMVECTOR at = XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);
-  XMVECTOR up = XMVectorSet(0.0f, 0.951865792f, 0.306514263f, 1.0f);
+  XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 1.0f);
   m_camera.Set(eye, at, up);
 }
 
