@@ -138,9 +138,8 @@ void PBSScene::EquirectangularToCubemap(ID3D12CommandQueue* pCommandQueue) {
   m_commandList->IASetVertexBuffers(0, 1, &m_vertexBufferViewCube);
   m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-  UINT cubeMapWidth = 512; UINT cubeMapHeight = 512;
-  CD3DX12_VIEWPORT viewport{ 0.f, 0.f, static_cast<float>(cubeMapWidth), static_cast<float>(cubeMapHeight) };
-  CD3DX12_RECT scissorRect{ 0, 0, static_cast<LONG>(cubeMapWidth), static_cast<LONG>(cubeMapHeight) };
+  CD3DX12_VIEWPORT viewport{ 0.f, 0.f, static_cast<float>(kCubeMapWidth), static_cast<float>(kCubeMapHeight) };
+  CD3DX12_RECT scissorRect{ 0, 0, static_cast<LONG>(kCubeMapWidth), static_cast<LONG>(kCubeMapHeight) };
   m_commandList->RSSetViewports(1, &viewport);
   m_commandList->RSSetScissorRects(1, &scissorRect);
 
@@ -177,7 +176,6 @@ void PBSScene::EquirectangularToCubemap(ID3D12CommandQueue* pCommandQueue) {
     m_commandList->OMSetRenderTargets(1, &cubeMapRTVHandle, false, nullptr);
     cubeMapRTVHandle.Offset(1, m_rtvDescriptorSize);
 
-    auto foo = m_pCurrentFrameResource->m_constantBufferEquirectangularToCubemap->GetGPUVirtualAddress() + i * constantBufferSize;
     m_commandList->SetGraphicsRootConstantBufferView(0, 
       m_pCurrentFrameResource->m_constantBufferEquirectangularToCubemap->GetGPUVirtualAddress() + i * constantBufferSize);
 
@@ -186,6 +184,66 @@ void PBSScene::EquirectangularToCubemap(ID3D12CommandQueue* pCommandQueue) {
 
   D3D12_RESOURCE_BARRIER cubeMapBarrier = CD3DX12_RESOURCE_BARRIER::Transition(m_cubeMap.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
   m_commandList->ResourceBarrier(1, &cubeMapBarrier);
+
+  //ThrowIfFailed(m_commandList->Close());
+  //ID3D12CommandList* command_lists[] = { m_commandList.Get() };
+  //pCommandQueue->ExecuteCommandLists(_countof(command_lists), command_lists);
+}
+
+void PBSScene::ConvolveIrradianceMap(ID3D12CommandQueue* pCommandQueue) {
+  m_commandList->SetPipelineState(m_pipelineIrradianceConvolution.Get());
+
+  CD3DX12_GPU_DESCRIPTOR_HANDLE skyboxGpuHandle(m_cbvSrvHeap->GetGPUDescriptorHandleForHeapStart());
+  skyboxGpuHandle.Offset(m_cbvSrvDescriptorSize);
+  m_commandList->SetGraphicsRootDescriptorTable(1, skyboxGpuHandle);
+
+  // Some states are the same as equirectangular to cubemap's, so omit api calls such as IASetVertexBuffers
+  CD3DX12_VIEWPORT viewport{ 0.f, 0.f, static_cast<float>(kIrradianceMapWidth), static_cast<float>(kIrradianceMapHeight) };
+  CD3DX12_RECT scissorRect{ 0, 0, static_cast<LONG>(kIrradianceMapWidth), static_cast<LONG>(kIrradianceMapHeight) };
+  m_commandList->RSSetViewports(1, &viewport);
+  m_commandList->RSSetScissorRects(1, &scissorRect);
+
+  Camera camera;
+  XMVECTOR eye = XMVectorSet(0.0f, 0.0, 0.0, 1.0f);
+  float cameraTargets[] = {
+  1.0f, 0.0f, 0.0f,
+  -1.0f, 0.0f, 0.0f,
+  0.0f, 1.0f, 0.0f,
+  0.0f, -1.0f, 0.0f,
+  0.0f, 0.0f, 1.0f,
+  0.0f, 0.0f, -1.0f
+  };
+  float cameraUps[] = {
+    0.0f, -1.0f,  0.0f,
+    0.0f, -1.0f,  0.0f,
+    0.0f,  0.0f,  -1.0f,
+    0.0f,  0.0f, 1.0f,
+    0.0f, -1.0f,  0.0f,
+    0.0f, -1.0f,  0.0f
+  };
+  std::vector<ViewProjectionConstantBuffer> constantBuffers(6);
+  for (UINT16 i = 0; i < kCubeMapArraySize; ++i) {
+    XMVECTOR at = XMVectorSet(cameraTargets[3 * i], cameraTargets[3 * i + 1], cameraTargets[3 * i + 2], 0.0f);
+    XMVECTOR up = XMVectorSet(cameraUps[3 * i], cameraUps[3 * i + 1], cameraUps[3 * i + 2], 1.0f);
+    camera.Set(eye, at, up);
+    camera.Get3DViewProjMatrices(&constantBuffers[i].view, &constantBuffers[i].projection,
+      90.0f, static_cast<float>(kCubeMapWidth), static_cast<float>(kCubeMapHeight), 0.1f, 10.0f);
+  }
+  size_t constantBufferSize = sizeof(ViewProjectionConstantBuffer);
+  memcpy(m_pCurrentFrameResource->m_pConstantBufferIrradianceConvolutionWO, constantBuffers.data(), constantBufferSize * 6);
+  CD3DX12_CPU_DESCRIPTOR_HANDLE irradianceMapRTVHandle(m_rtvHeap->GetCPUDescriptorHandleForHeapStart(), m_frameCount + kCubeMapArraySize, m_rtvDescriptorSize);
+  for (UINT16 i = 0; i < kCubeMapArraySize; ++i) {
+    m_commandList->OMSetRenderTargets(1, &irradianceMapRTVHandle, false, nullptr);
+    irradianceMapRTVHandle.Offset(1, m_rtvDescriptorSize);
+    
+    m_commandList->SetGraphicsRootConstantBufferView(0,
+      m_pCurrentFrameResource->m_constantBufferIrradianceConvolution->GetGPUVirtualAddress() + i * constantBufferSize);
+
+    m_commandList->DrawInstanced(36, 1, 0, 0);
+  }
+
+  D3D12_RESOURCE_BARRIER irradianceMapBarrier = CD3DX12_RESOURCE_BARRIER::Transition(m_irradianceMap.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+  m_commandList->ResourceBarrier(1, &irradianceMapBarrier);
 
   ThrowIfFailed(m_commandList->Close());
   ID3D12CommandList* command_lists[] = { m_commandList.Get() };
@@ -334,6 +392,41 @@ void PBSScene::CreatePipelineStates(ID3D12Device* pDevice) {
     ThrowIfFailed(pDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_pipelineStateSkybox)));
     NAME_D3D12_OBJECT(m_pipelineStateSkybox);
   }
+
+  // Create the pipeline state for generating irradiance map
+  {
+    ComPtr<ID3DBlob> vertexShader;
+    ComPtr<ID3DBlob> pixelShader;
+    vertexShader = CompileShader(m_pSample->GetAssetFullPath(L"assets/irradiance_convolution.hlsl").c_str(), nullptr, "VSMain", "vs_5_0");
+    pixelShader = CompileShader(m_pSample->GetAssetFullPath(L"assets/irradiance_convolution.hlsl").c_str(), nullptr, "PSMain", "ps_5_0");
+
+    const D3D12_INPUT_ELEMENT_DESC vertexAttributeDesc[] = {
+      {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+      {"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+      {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}
+    };
+    D3D12_INPUT_LAYOUT_DESC inputLayoutDesc;
+    inputLayoutDesc.pInputElementDescs = vertexAttributeDesc;
+    inputLayoutDesc.NumElements = _countof(vertexAttributeDesc);
+
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
+    psoDesc.InputLayout = inputLayoutDesc;
+    psoDesc.pRootSignature = m_rootSignatureEquirectangularToCubemap.Get();
+    psoDesc.VS = CD3DX12_SHADER_BYTECODE(vertexShader.Get());
+    psoDesc.PS = CD3DX12_SHADER_BYTECODE(pixelShader.Get());
+    psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+    psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+    //psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+    psoDesc.SampleMask = UINT_MAX;
+    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    psoDesc.NumRenderTargets = 1;
+    psoDesc.RTVFormats[0] = DXGI_FORMAT_R32G32B32A32_FLOAT;
+    psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+    psoDesc.SampleDesc.Count = 1;
+
+    ThrowIfFailed(pDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_pipelineIrradianceConvolution)));
+    NAME_D3D12_OBJECT(m_pipelineIrradianceConvolution);
+  }
 }
 
 void PBSScene::CreateFrameResources(ID3D12Device* pDevice, ID3D12CommandQueue* pCommandQueue) {
@@ -392,7 +485,7 @@ void PBSScene::CreateAssetResources(ID3D12Device* pDevice, ID3D12GraphicsCommand
     m_vertexBufferViewCube.StrideInBytes = static_cast<UINT>(Model::GetVertexStride());
   }
 
-  // Create HDR texture and cubemap resource.
+  // Create HDR texture, cubemap, irradiance map resource.
   {
     // Get a handle to the start of the descriptor heap.
     CD3DX12_CPU_DESCRIPTOR_HANDLE cbvSrvCpuHandle(m_cbvSrvHeap->GetCPUDescriptorHandleForHeapStart());
@@ -514,6 +607,55 @@ void PBSScene::CreateAssetResources(ID3D12Device* pDevice, ID3D12GraphicsCommand
     for (UINT16 i = 0; i < kCubeMapArraySize; ++i) {
       cubeMapRTVDesc.Texture2DArray.FirstArraySlice = i;
       pDevice->CreateRenderTargetView(m_cubeMap.Get(), &cubeMapRTVDesc, rtvCpuHandle);
+      rtvCpuHandle.Offset(1, m_rtvDescriptorSize);
+    }
+
+    // *** irradiance map ***
+    CD3DX12_RESOURCE_DESC irradianceMapDesc(
+      D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+      0,
+      kIrradianceMapWidth,
+      kIrradianceMapHeight,
+      kCubeMapArraySize,
+      1,
+      metaData.format,
+      1,
+      0,
+      D3D12_TEXTURE_LAYOUT_UNKNOWN,
+      D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);
+
+    D3D12_CLEAR_VALUE irradianceMapClearValue = CD3DX12_CLEAR_VALUE(irradianceMapDesc.Format, s_clearColor);
+    ThrowIfFailed(pDevice->CreateCommittedResource(
+      &defaultHeapProperty,
+      D3D12_HEAP_FLAG_NONE,
+      &irradianceMapDesc,
+      D3D12_RESOURCE_STATE_RENDER_TARGET,
+      &irradianceMapClearValue,
+      IID_PPV_ARGS(&m_irradianceMap)));
+    NAME_D3D12_OBJECT(m_irradianceMap);
+
+    // Describe and create an irradiance map SRV.
+    D3D12_SHADER_RESOURCE_VIEW_DESC irradianceMapSrvDesc = {};
+    irradianceMapSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBE;
+    irradianceMapSrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    irradianceMapSrvDesc.Format = irradianceMapDesc.Format;
+    irradianceMapSrvDesc.TextureCube.MipLevels = 1;
+    irradianceMapSrvDesc.TextureCube.MostDetailedMip = 0;
+    irradianceMapSrvDesc.TextureCube.ResourceMinLODClamp = 0.0f;
+    pDevice->CreateShaderResourceView(m_irradianceMap.Get(), &irradianceMapSrvDesc, cbvSrvCpuHandle);
+    cbvSrvCpuHandle.Offset(m_cbvSrvDescriptorSize);
+    cbvSrvGpuHandle.Offset(m_cbvSrvDescriptorSize);
+
+    // Create RTV to each irradiance cube face.
+    D3D12_RENDER_TARGET_VIEW_DESC irradianceMapRTVDesc{};
+    irradianceMapRTVDesc.Format = irradianceMapDesc.Format;
+    irradianceMapRTVDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DARRAY;
+    irradianceMapRTVDesc.Texture2DArray.MipSlice = 0;
+    irradianceMapRTVDesc.Texture2DArray.PlaneSlice = 0;
+    irradianceMapRTVDesc.Texture2DArray.ArraySize = 1;
+    for (UINT16 i = 0; i < kCubeMapArraySize; ++i) {
+      irradianceMapRTVDesc.Texture2DArray.FirstArraySlice = i;
+      pDevice->CreateRenderTargetView(m_irradianceMap.Get(), &irradianceMapRTVDesc, rtvCpuHandle);
       rtvCpuHandle.Offset(1, m_rtvDescriptorSize);
     }
   }

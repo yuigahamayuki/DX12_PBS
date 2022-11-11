@@ -33,7 +33,7 @@ float2 SampleSphericalMap(float3 direction)
   return uv;
 }
 
-float4 PSMain(PSInput input) : SV_TARGET{
+float4 PSMain(PSInput input) : SV_TARGET {
   float2 uv = SampleSphericalMap(normalize(input.worldPos));
 
   return HDRMap.Sample(HDRSampler, uv);

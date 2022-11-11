@@ -14,7 +14,8 @@ void DX12PBSSample::OnInit() {
   LoadAssets();
   LoadSizeDependentResources();
 
-  EquirectangularToCubemap();
+  GPUWorkForInitialization();
+
 }
 
 void DX12PBSSample::OnUpdate() {
@@ -181,9 +182,9 @@ void DX12PBSSample::LoadSizeDependentResources() {
   m_scene->LoadSizeDependentResources(m_device.Get(), m_renderTargets, m_width, m_height);
 }
 
-void DX12PBSSample::EquirectangularToCubemap() {
+void DX12PBSSample::GPUWorkForInitialization() {
   m_scene->EquirectangularToCubemap(m_commandQueue.Get());
-
+  m_scene->ConvolveIrradianceMap(m_commandQueue.Get());
   WaitForGpu(m_commandQueue.Get());
 }
 

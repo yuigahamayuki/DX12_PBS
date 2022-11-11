@@ -37,6 +37,8 @@ public:
 
   void EquirectangularToCubemap(ID3D12CommandQueue* pCommandQueue);
 
+  void ConvolveIrradianceMap(ID3D12CommandQueue* pCommandQueue);
+
 private:
   void InitializeCameraAndLights();
 
@@ -56,13 +58,14 @@ private:
   void EndFrame();
 
   UINT GetNumRtvDescriptors() const {
-    // 6 faces of cubemap
-    return m_frameCount + 6;
+    // 1st 6: 6 faces of skybox cubemap
+    // 2nd 6: 6 faces of irradiance cubemap
+    return m_frameCount + 6 + 6;
   }
 
   UINT GetNumCbvSrvUavDescriptors() const {
-    // 1 hdr texture + 1 cubemap
-    return 2;
+    // 1 hdr texture + 1 skybox cubemap + 1 irradiance map
+    return 1 + 1 + 1;
   }
 
   inline CD3DX12_CPU_DESCRIPTOR_HANDLE GetCurrentBackBufferRtvCpuHandle() const {
@@ -73,6 +76,8 @@ private:
   static constexpr UINT kCubeMapWidth = 512;
   static constexpr UINT kCubeMapHeight = 512;
   static constexpr UINT16 kCubeMapArraySize = 6;  // a cube has 6 faces
+  static constexpr UINT kIrradianceMapWidth = 32;
+  static constexpr UINT kIrradianceMapHeight = 32;
 
   UINT m_frameCount = 0;
 
@@ -92,12 +97,14 @@ private:
   ComPtr<ID3D12RootSignature> m_rootSignatureEquirectangularToCubemap;
   ComPtr<ID3D12PipelineState> m_pipelineStateEquirectangularToCubemap;
   ComPtr<ID3D12PipelineState> m_pipelineStateSkybox;
+  ComPtr<ID3D12PipelineState> m_pipelineIrradianceConvolution;
   ComPtr<ID3D12Resource> m_vertexBufferCube;
   ComPtr<ID3D12Resource> m_vertexBufferCubeUpload;
   D3D12_VERTEX_BUFFER_VIEW m_vertexBufferViewCube{};
   ComPtr<ID3D12Resource> m_HDRTexture;
   ComPtr<ID3D12Resource> m_HDRTextureUpload;
   ComPtr<ID3D12Resource> m_cubeMap;
+  ComPtr<ID3D12Resource> m_irradianceMap;
   std::vector<ComPtr<ID3D12Resource>> m_renderTargets;
   ComPtr<ID3D12GraphicsCommandList> m_commandList;
 

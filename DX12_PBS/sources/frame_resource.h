@@ -14,6 +14,9 @@ public:
   ComPtr<ID3D12Resource> m_constantBufferMVP;
   void* m_pConstantBufferMVPWO = nullptr;
 
+  ComPtr<ID3D12Resource> m_constantBufferIrradianceConvolution;
+  void* m_pConstantBufferIrradianceConvolutionWO = nullptr;
+
 public:
   FrameResource(ID3D12Device* pDevice, ID3D12CommandQueue* pCommandQueue);
   ~FrameResource();

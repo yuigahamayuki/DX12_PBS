@@ -31,7 +31,7 @@ private:
   void LoadAssets();
   void LoadSizeDependentResources();
 
-  void EquirectangularToCubemap();
+  void GPUWorkForInitialization();
 
   void WaitForGpu(ID3D12CommandQueue* pCommandQueue);
   void MoveToNextFrame();

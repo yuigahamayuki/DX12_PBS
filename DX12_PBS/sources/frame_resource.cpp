@@ -17,11 +17,17 @@ FrameResource::FrameResource(ID3D12Device* pDevice, ID3D12CommandQueue* pCommand
       nullptr, D3D12_RESOURCE_STATE_GENERIC_READ));
     NAME_D3D12_OBJECT(m_constantBufferMVP);
 
+    // 6: A cube has 6 faces.
+    ThrowIfFailed(CreateConstantBuffer(pDevice, sizeof(ViewProjectionConstantBuffer) * 6, &m_constantBufferIrradianceConvolution,
+      nullptr, D3D12_RESOURCE_STATE_GENERIC_READ));
+    NAME_D3D12_OBJECT(m_constantBufferIrradianceConvolution);
+
     // Map the constant buffers and cache their heap pointers.
     // We don't unmap this until the app closes. Keeping buffer mapped for the lifetime of the resource is okay.
     const CD3DX12_RANGE readRange(0, 0); // We do not intend to read from this resource on the CPU.
     ThrowIfFailed(m_constantBufferEquirectangularToCubemap->Map(0, &readRange, &m_pConstantBufferEquirectangularToCubemapWO));
     ThrowIfFailed(m_constantBufferMVP->Map(0, &readRange, &m_pConstantBufferMVPWO));
+    ThrowIfFailed(m_constantBufferIrradianceConvolution->Map(0, &readRange, &m_pConstantBufferIrradianceConvolutionWO));
   }
 }
 
