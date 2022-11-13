@@ -66,5 +66,8 @@
     <CopyFileToFolders Include="assets\irradiance_convolution.hlsl">
       <Filter>assets</Filter>
     </CopyFileToFolders>
+    <CopyFileToFolders Include="assets\pbr.hlsl">
+      <Filter>assets</Filter>
+    </CopyFileToFolders>
   </ItemGroup>
 </Project>

@@ -35,12 +35,13 @@ public:
 
   void Render(ID3D12CommandQueue* pCommandQueue);
 
-  void EquirectangularToCubemap(ID3D12CommandQueue* pCommandQueue);
-
-  void ConvolveIrradianceMap(ID3D12CommandQueue* pCommandQueue);
+  void GPUWorkForInitialization(ID3D12CommandQueue* pCommandQueue);
 
 private:
   void InitializeCameraAndLights();
+
+  void EquirectangularToCubemap();
+  void ConvolveIrradianceMap();
 
   void CreateDescriptorHeaps(ID3D12Device* pDevice);
   void CreateRootSignatures(ID3D12Device* pDevice);
@@ -52,6 +53,7 @@ private:
   void UpdateConstantBuffers();
   void CommitConstantBuffers();
 
+  void ScenePass();
   void SkyboxPass();
 
   void BeginFrame();
@@ -89,6 +91,7 @@ private:
 
   // Heap objects.
   ComPtr<ID3D12DescriptorHeap> m_rtvHeap;
+  ComPtr<ID3D12DescriptorHeap> m_dsvHeap;
   ComPtr<ID3D12DescriptorHeap> m_cbvSrvHeap;
   UINT m_rtvDescriptorSize = 0;
   UINT m_cbvSrvDescriptorSize = 0;
@@ -98,6 +101,8 @@ private:
   ComPtr<ID3D12PipelineState> m_pipelineStateEquirectangularToCubemap;
   ComPtr<ID3D12PipelineState> m_pipelineStateSkybox;
   ComPtr<ID3D12PipelineState> m_pipelineIrradianceConvolution;
+  ComPtr<ID3D12RootSignature> m_rootSignatureScenePass;
+  ComPtr<ID3D12PipelineState> m_pipelineStateScenePass;
   ComPtr<ID3D12Resource> m_vertexBufferCube;
   ComPtr<ID3D12Resource> m_vertexBufferCubeUpload;
   D3D12_VERTEX_BUFFER_VIEW m_vertexBufferViewCube{};
@@ -105,7 +110,15 @@ private:
   ComPtr<ID3D12Resource> m_HDRTextureUpload;
   ComPtr<ID3D12Resource> m_cubeMap;
   ComPtr<ID3D12Resource> m_irradianceMap;
+  ComPtr<ID3D12Resource> m_vertexBufferSphere;
+  ComPtr<ID3D12Resource> m_vertexBufferSphereUpload;
+  D3D12_VERTEX_BUFFER_VIEW m_vertexBufferViewSphere{};
+  ComPtr<ID3D12Resource> m_indexBufferSphere;
+  ComPtr<ID3D12Resource> m_indexBufferSphereUpload;
+  D3D12_INDEX_BUFFER_VIEW m_indexBufferViewSphere{};
   std::vector<ComPtr<ID3D12Resource>> m_renderTargets;
+  ComPtr<ID3D12Resource> m_depthTexture;
+  D3D12_CPU_DESCRIPTOR_HANDLE m_depthDsv;
   ComPtr<ID3D12GraphicsCommandList> m_commandList;
 
   CD3DX12_VIEWPORT m_viewport{};
