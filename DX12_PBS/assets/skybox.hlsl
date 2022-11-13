@@ -25,7 +25,7 @@ PSInput VSMain(float3 position : POSITION) {
   view_remove_translate._m20_m21_m22 = view_3by3._m20_m21_m22;
   result.position = mul(inputPosition, view_remove_translate);
   result.position = mul(result.position, projection);
-
+  result.position.z = result.position.w;
   return result;
 }
 
