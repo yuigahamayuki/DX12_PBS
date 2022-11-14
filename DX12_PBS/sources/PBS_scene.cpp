@@ -341,6 +341,14 @@ void PBSScene::InitializeCameraAndLights() {
   XMVECTOR at = XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);
   XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 1.0f);
   m_camera.Set(eye, at, up);
+
+  std::vector<LightState> lightStates;
+  lightStates.emplace_back(-10.0f,  10.0f, 10.0f, 300.0f, 300.0f, 300.0f);
+  lightStates.emplace_back( 10.0f,  10.0f, 10.0f, 300.0f, 300.0f, 300.0f);
+  lightStates.emplace_back(-10.0f, -10.0f, 10.0f, 300.0f, 300.0f, 300.0f);
+  lightStates.emplace_back( 10.0f, -10.0f, 10.0f, 300.0f, 300.0f, 300.0f);
+
+  memcpy(&m_lights.lights[0], lightStates.data(), sizeof(LightState) * kNumLights);
 }
 
 void PBSScene::CreateDescriptorHeaps(ID3D12Device* pDevice) {
@@ -391,6 +399,7 @@ void PBSScene::CreateRootSignatures(ID3D12Device* pDevice) {
   {
     std::vector<util::DescriptorDesc> descriptorDescs;
     descriptorDescs.emplace_back(util::DescriptorType::kConstantBuffer, D3D12_SHADER_VISIBILITY_ALL, 1, 0);
+    descriptorDescs.emplace_back(util::DescriptorType::kConstantBuffer, D3D12_SHADER_VISIBILITY_PIXEL, 1, 1);
     descriptorDescs.emplace_back(util::DescriptorType::kShaderResourceView, D3D12_SHADER_VISIBILITY_PIXEL, 1, 0);
 
     util::CreateRootSignature(pDevice, descriptorDescs, samplerDescs, &m_rootSignatureScenePass, L"m_rootSignatureScenePass");
@@ -460,6 +469,8 @@ void PBSScene::CreatePipelineStates(ID3D12Device* pDevice) {
 void PBSScene::CreateFrameResources(ID3D12Device* pDevice, ID3D12CommandQueue* pCommandQueue) {
   for (UINT i = 0; i < m_frameCount; i++) {
     m_frameResources[i] = std::make_unique<FrameResource>(pDevice, pCommandQueue);
+
+    memcpy(m_frameResources[i]->m_pConstantBufferLightStatesWO, &m_lights, sizeof(m_lights));
   }
 }
 
@@ -561,7 +572,7 @@ void PBSScene::UpdateConstantBuffers() {
 }
 
 void PBSScene::CommitConstantBuffers() {
-  memcpy(m_pCurrentFrameResource->m_pConstantBufferMVPWO, &m_MVPConstantBuffer, sizeof(m_MVPConstantBuffer));
+  memcpy(m_pCurrentFrameResource->m_pConstantBufferMVPWO, &m_MVPConstantBuffer, sizeof(m_MVPConstantBuffer));  
 }
 
 void PBSScene::ScenePass() {
@@ -573,8 +584,9 @@ void PBSScene::ScenePass() {
   m_commandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
 
   m_commandList->SetGraphicsRootConstantBufferView(0, m_pCurrentFrameResource->m_constantBufferMVP->GetGPUVirtualAddress());
+  m_commandList->SetGraphicsRootConstantBufferView(1, m_pCurrentFrameResource->m_constantBufferLightStates->GetGPUVirtualAddress());
   CD3DX12_GPU_DESCRIPTOR_HANDLE irradianceMapGpuHandle(m_cbvSrvHeap->GetGPUDescriptorHandleForHeapStart(), 2, m_cbvSrvDescriptorSize);
-  m_commandList->SetGraphicsRootDescriptorTable(1, irradianceMapGpuHandle);
+  m_commandList->SetGraphicsRootDescriptorTable(2, irradianceMapGpuHandle);
 
   m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
   D3D12_VERTEX_BUFFER_VIEW vertexBufferViews[2] = { m_vertexBufferViewSphere , m_instanceBufferViewSphere };

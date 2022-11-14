@@ -92,6 +92,7 @@ private:
   std::vector<std::unique_ptr<FrameResource>> m_frameResources;
   FrameResource* m_pCurrentFrameResource = nullptr;
   ModelViewProjectionConstantBuffer m_MVPConstantBuffer;
+  LightStatesConstantBuffer m_lights;
 
   // Heap objects.
   ComPtr<ID3D12DescriptorHeap> m_rtvHeap;

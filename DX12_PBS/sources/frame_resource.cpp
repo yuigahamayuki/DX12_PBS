@@ -1,6 +1,7 @@
 #include "frame_resource.h"
 
 #include "sample_assets.h"
+#include "util/DXHelper.h"
 
 FrameResource::FrameResource(ID3D12Device* pDevice, ID3D12CommandQueue* pCommandQueue) {
   ThrowIfFailed(pDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&m_commandAllocator)));
@@ -8,19 +9,26 @@ FrameResource::FrameResource(ID3D12Device* pDevice, ID3D12CommandQueue* pCommand
 
   // Create constant buffers.
   {
-    // 6: A cube has 6 faces.
-    ThrowIfFailed(CreateConstantBuffer(pDevice, sizeof(ViewProjectionConstantBuffer) * 6, &m_constantBufferEquirectangularToCubemap,
+    // A cube has 6 faces.
+    constexpr UINT8 kCubeMapArraySize = 6;
+    
+    ThrowIfFailed(util::CreateConstantBuffer(pDevice, sizeof(ViewProjectionConstantBuffer) * kCubeMapArraySize, &m_constantBufferEquirectangularToCubemap,
       nullptr, D3D12_RESOURCE_STATE_GENERIC_READ));
     NAME_D3D12_OBJECT(m_constantBufferEquirectangularToCubemap);
 
-    ThrowIfFailed(CreateConstantBuffer(pDevice, sizeof(ModelViewProjectionConstantBuffer), &m_constantBufferMVP,
+    ThrowIfFailed(util::CreateConstantBuffer(pDevice, sizeof(ModelViewProjectionConstantBuffer), &m_constantBufferMVP,
       nullptr, D3D12_RESOURCE_STATE_GENERIC_READ));
     NAME_D3D12_OBJECT(m_constantBufferMVP);
 
     // 6: A cube has 6 faces.
-    ThrowIfFailed(CreateConstantBuffer(pDevice, sizeof(ViewProjectionConstantBuffer) * 6, &m_constantBufferIrradianceConvolution,
+    ThrowIfFailed(util::CreateConstantBuffer(pDevice, sizeof(ViewProjectionConstantBuffer) * kCubeMapArraySize, &m_constantBufferIrradianceConvolution,
       nullptr, D3D12_RESOURCE_STATE_GENERIC_READ));
     NAME_D3D12_OBJECT(m_constantBufferIrradianceConvolution);
+
+    // constant buffer for light states
+    ThrowIfFailed(util::CreateConstantBuffer(pDevice, sizeof(LightStatesConstantBuffer), &m_constantBufferLightStates,
+      nullptr, D3D12_RESOURCE_STATE_GENERIC_READ));
+    NAME_D3D12_OBJECT(m_constantBufferLightStates);
 
     // Map the constant buffers and cache their heap pointers.
     // We don't unmap this until the app closes. Keeping buffer mapped for the lifetime of the resource is okay.
@@ -28,6 +36,7 @@ FrameResource::FrameResource(ID3D12Device* pDevice, ID3D12CommandQueue* pCommand
     ThrowIfFailed(m_constantBufferEquirectangularToCubemap->Map(0, &readRange, &m_pConstantBufferEquirectangularToCubemapWO));
     ThrowIfFailed(m_constantBufferMVP->Map(0, &readRange, &m_pConstantBufferMVPWO));
     ThrowIfFailed(m_constantBufferIrradianceConvolution->Map(0, &readRange, &m_pConstantBufferIrradianceConvolutionWO));
+    ThrowIfFailed(m_constantBufferLightStates->Map(0, &readRange, &m_pConstantBufferLightStatesWO));
   }
 }
 

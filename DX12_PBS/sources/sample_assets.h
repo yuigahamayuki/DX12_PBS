@@ -16,6 +16,22 @@ struct ModelViewProjectionConstantBuffer {
   XMFLOAT4X4 projection;
 };
 
+struct LightState {
+  LightState() = default;
+  LightState(float posX, float posY, float posZ,
+    float colorR, float colorG, float colorB) {
+    position[0] = posX, position[1] = posY, position[2] = posZ;
+    color[0] = colorR, color[1] = colorG, color[2] = colorB;
+  }
+
+  float position[4]{};
+  float color[4]{};
+};
+static constexpr UINT8 kNumLights = 4;
+struct LightStatesConstantBuffer {
+  LightState lights[kNumLights];
+};
+
 class Model {
 public:
   struct Vertex {

@@ -84,4 +84,11 @@ HRESULT CreateDepthStencilTexture2D(
   ID3D12Resource** ppResource, D3D12_CPU_DESCRIPTOR_HANDLE cpuDsvHandle,
   D3D12_RESOURCE_STATES initState = D3D12_RESOURCE_STATE_DEPTH_WRITE,
   float initDepthValue = 1.0f, UINT8 initStencilValue = 0);
+
+HRESULT CreateConstantBuffer(
+  ID3D12Device* pDevice,
+  UINT size,
+  ID3D12Resource** ppResource,
+  D3D12_CPU_DESCRIPTOR_HANDLE* pCpuCbvHandle = nullptr,
+  D3D12_RESOURCE_STATES initState = D3D12_RESOURCE_STATE_GENERIC_READ);
 }  // namespace util
