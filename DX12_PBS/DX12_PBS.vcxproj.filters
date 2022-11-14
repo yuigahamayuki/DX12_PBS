@@ -25,6 +25,9 @@
     <ClCompile Include="sources\util\Camera.cpp">
       <Filter>util</Filter>
     </ClCompile>
+    <ClCompile Include="sources\util\DXHelper.cpp">
+      <Filter>util</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="sources\core\DXSample.h">
@@ -50,6 +53,9 @@
       <Filter>util</Filter>
     </ClInclude>
     <ClInclude Include="sources\util\StepTimer.h">
+      <Filter>util</Filter>
+    </ClInclude>
+    <ClInclude Include="sources\util\DXHelper.h">
       <Filter>util</Filter>
     </ClInclude>
   </ItemGroup>

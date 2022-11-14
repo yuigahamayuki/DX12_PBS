@@ -66,7 +66,7 @@ private:
   UINT GetNumRtvDescriptors() const {
     // 1st 6: 6 faces of skybox cubemap
     // 2nd 6: 6 faces of irradiance cubemap
-    return m_frameCount + 6 + 6;
+    return m_frameCount + kCubeMapArraySize + kCubeMapArraySize;
   }
 
   UINT GetNumCbvSrvUavDescriptors() const {

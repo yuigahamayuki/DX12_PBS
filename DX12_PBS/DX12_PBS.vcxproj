@@ -138,6 +138,7 @@
     <ClCompile Include="sources\main.cpp" />
     <ClCompile Include="sources\PBS_scene.cpp" />
     <ClCompile Include="sources\util\Camera.cpp" />
+    <ClCompile Include="sources\util\DXHelper.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="sources\core\d3dx12.h" />
@@ -150,6 +151,7 @@
     <ClInclude Include="sources\PBS_scene.h" />
     <ClInclude Include="sources\sample_assets.h" />
     <ClInclude Include="sources\util\Camera.h" />
+    <ClInclude Include="sources\util\DXHelper.h" />
     <ClInclude Include="sources\util\StepTimer.h" />
   </ItemGroup>
   <ItemGroup>
