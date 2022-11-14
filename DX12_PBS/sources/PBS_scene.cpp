@@ -7,6 +7,8 @@
 #include "frame_resource.h"
 #include "sample_assets.h"
 
+namespace {
+
 HRESULT CreateDepthStencilTexture2D(
   ID3D12Device* pDevice,
   UINT width,
@@ -14,7 +16,7 @@ HRESULT CreateDepthStencilTexture2D(
   DXGI_FORMAT typelessFormat,
   DXGI_FORMAT dsvFormat,
   ID3D12Resource** ppResource,
-  D3D12_CPU_DESCRIPTOR_HANDLE cpuDsvHandle,  
+  D3D12_CPU_DESCRIPTOR_HANDLE cpuDsvHandle,
   D3D12_RESOURCE_STATES initState = D3D12_RESOURCE_STATE_DEPTH_WRITE,
   float initDepthValue = 1.0f,
   UINT8 initStencilValue = 0)
@@ -60,6 +62,44 @@ HRESULT CreateDepthStencilTexture2D(
   }
   return S_OK;
 }
+
+struct SphereInstance {
+  float translation[3]{};
+  float pbrProperties[3]{};  // r: metallic, g: roughness, b: ao
+};
+
+std::unique_ptr<SphereInstance[]> GetSphereInstanceData(UINT& instanceCount) {
+  const int nrRows = 7;
+  const int nrColumns = 7;
+  const float spacing = 2.5f;
+  instanceCount = static_cast<UINT>(nrRows * nrColumns);
+
+  std::vector<SphereInstance> instances;
+
+  for (int row = 0; row < nrRows; ++row) {
+    float metallic = (float)row / (float)nrRows;
+    for (int col = 0; col < nrColumns; ++col) {
+      float roughness = (float)col / (float)nrColumns;
+      SphereInstance instance;
+      instance.translation[0] = (col - (nrColumns / 2)) * spacing;
+      instance.translation[1] = (row - (nrRows / 2)) * spacing;
+      instance.translation[2] = 0.0f;
+      instance.pbrProperties[0] = metallic;
+      instance.pbrProperties[1] = roughness;
+      instances.emplace_back(instance);
+    }
+  }
+
+  instanceCount = static_cast<UINT>(instances.size());
+  std::unique_ptr<SphereInstance[]> instances_ptr = std::make_unique<SphereInstance[]>(instances.size());
+  memcpy(instances_ptr.get(), instances.data(), sizeof(SphereInstance) * instances.size());
+
+  return instances_ptr;
+}
+
+}  // namespace
+
+
 
 PBSScene::PBSScene(UINT frameCount, DXSample* pSample) :
   m_frameCount(frameCount),
@@ -544,11 +584,14 @@ void PBSScene::CreatePipelineStates(ID3D12Device* pDevice) {
     ComPtr<ID3DBlob> pixelShader;
     vertexShader = CompileShader(m_pSample->GetAssetFullPath(L"assets/pbr.hlsl").c_str(), nullptr, "VSMain", "vs_5_0");
     pixelShader = CompileShader(m_pSample->GetAssetFullPath(L"assets/pbr.hlsl").c_str(), nullptr, "PSMain", "ps_5_0");
-
+    
     const D3D12_INPUT_ELEMENT_DESC vertexAttributeDesc[] = {
       {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
       {"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-      {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}
+      {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+
+      {"INSTANCEPOS", 0, DXGI_FORMAT_R32G32B32_FLOAT, 1, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1},
+      {"INSTANCEPBRPROPERTIES", 0, DXGI_FORMAT_R32G32B32_FLOAT, 1, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1}
     };
     D3D12_INPUT_LAYOUT_DESC inputLayoutDesc;
     inputLayoutDesc.pInputElementDescs = vertexAttributeDesc;
@@ -805,7 +848,7 @@ void PBSScene::CreateAssetResources(ID3D12Device* pDevice, ID3D12GraphicsCommand
     }
   }
 
-  // Create the sphere vertex and index buffer.
+  // Create the sphere vertex, index, and instance buffer.
   {
     SphereModel sphereModel(64, 64);
     std::unique_ptr<Model::Vertex[]> vertices = sphereModel.GetVertexData();
@@ -847,6 +890,7 @@ void PBSScene::CreateAssetResources(ID3D12Device* pDevice, ID3D12GraphicsCommand
     m_vertexBufferViewSphere.SizeInBytes = static_cast<UINT>(vertexDataSize);
     m_vertexBufferViewSphere.StrideInBytes = static_cast<UINT>(Model::GetVertexStride());
 
+
     // *** index buffer related ***
     size_t indexDataSize = sphereModel.GetIndexDataSize();    
     D3D12_RESOURCE_DESC indexBufferResourceDesc = CD3DX12_RESOURCE_DESC::Buffer(indexDataSize);
@@ -880,6 +924,40 @@ void PBSScene::CreateAssetResources(ID3D12Device* pDevice, ID3D12GraphicsCommand
     m_indexBufferViewSphere.BufferLocation = m_indexBufferSphere->GetGPUVirtualAddress();
     m_indexBufferViewSphere.SizeInBytes = static_cast<UINT>(indexDataSize);
     m_indexBufferViewSphere.Format = DXGI_FORMAT_R32_UINT;
+
+
+    // *** instance buffer related ***
+    std::unique_ptr<SphereInstance[]> instances = GetSphereInstanceData(m_instanceCountSphere);
+    size_t instanceDataSize = sizeof(SphereInstance) * m_instanceCountSphere;    
+    D3D12_RESOURCE_DESC instanceBufferResourceDesc = CD3DX12_RESOURCE_DESC::Buffer(instanceDataSize);
+    ThrowIfFailed(pDevice->CreateCommittedResource(
+      &defaultHeapProperty,
+      D3D12_HEAP_FLAG_NONE,
+      &instanceBufferResourceDesc,
+      D3D12_RESOURCE_STATE_COPY_DEST,
+      nullptr,
+      IID_PPV_ARGS(&m_instanceBufferSphere)));
+    NAME_D3D12_OBJECT(m_instanceBufferSphere);
+    
+    ThrowIfFailed(pDevice->CreateCommittedResource(
+      &uploadHeapProperty,
+      D3D12_HEAP_FLAG_NONE,
+      &instanceBufferResourceDesc,
+      D3D12_RESOURCE_STATE_GENERIC_READ,
+      nullptr,
+      IID_PPV_ARGS(&m_instanceBufferSphereUpload)));
+
+    D3D12_SUBRESOURCE_DATA instanceData = {};
+    instanceData.pData = instances.get();
+    instanceData.RowPitch = instanceDataSize;
+    instanceData.SlicePitch = instanceDataSize;
+
+    UpdateSubresources<1>(pCommandList, m_instanceBufferSphere.Get(), m_instanceBufferSphereUpload.Get(), 0, 0, 1, &instanceData);
+
+    // Initialize the instance buffer view.
+    m_instanceBufferViewSphere.BufferLocation = m_instanceBufferSphere->GetGPUVirtualAddress();
+    m_instanceBufferViewSphere.SizeInBytes = static_cast<UINT>(instanceDataSize);
+    m_instanceBufferViewSphere.StrideInBytes = static_cast<UINT>(sizeof(SphereInstance));
   }
 }
 
@@ -907,7 +985,8 @@ void PBSScene::ScenePass() {
   m_commandList->SetGraphicsRootDescriptorTable(1, irradianceMapGpuHandle);
 
   m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-  m_commandList->IASetVertexBuffers(0, 1, &m_vertexBufferViewSphere);
+  D3D12_VERTEX_BUFFER_VIEW vertexBufferViews[2] = { m_vertexBufferViewSphere , m_instanceBufferViewSphere };
+  m_commandList->IASetVertexBuffers(0, _countof(vertexBufferViews), vertexBufferViews);
   m_commandList->IASetIndexBuffer(&m_indexBufferViewSphere);
   m_commandList->RSSetViewports(1, &m_viewport);
   m_commandList->RSSetScissorRects(1, &m_scissorRect);
@@ -915,7 +994,7 @@ void PBSScene::ScenePass() {
   m_commandList->OMSetRenderTargets(1, &renderTargetCpuHandle, FALSE, &m_depthDsv);
 
   UINT indexCount = m_indexBufferViewSphere.SizeInBytes / sizeof(DWORD);
-  m_commandList->DrawIndexedInstanced(indexCount, 1, 0, 0, 0);
+  m_commandList->DrawIndexedInstanced(indexCount, m_instanceCountSphere, 0, 0, 0);
 }
 
 void PBSScene::SkyboxPass() {

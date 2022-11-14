@@ -116,6 +116,9 @@ private:
   ComPtr<ID3D12Resource> m_indexBufferSphere;
   ComPtr<ID3D12Resource> m_indexBufferSphereUpload;
   D3D12_INDEX_BUFFER_VIEW m_indexBufferViewSphere{};
+  ComPtr<ID3D12Resource> m_instanceBufferSphere;
+  ComPtr<ID3D12Resource> m_instanceBufferSphereUpload;
+  D3D12_VERTEX_BUFFER_VIEW m_instanceBufferViewSphere;
   std::vector<ComPtr<ID3D12Resource>> m_renderTargets;
   ComPtr<ID3D12Resource> m_depthTexture;
   D3D12_CPU_DESCRIPTOR_HANDLE m_depthDsv;
@@ -127,4 +130,5 @@ private:
   DXSample* m_pSample = nullptr;
   Camera m_camera;
   InputState m_keyboardInput;
+  UINT m_instanceCountSphere = 0;
 };

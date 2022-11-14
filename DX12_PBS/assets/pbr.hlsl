@@ -9,16 +9,28 @@ struct PSInput
 {
   float4 position : SV_POSITION;
   float3 worldPos : POSITION;
+  float metallic : COLOR;
+  float roughness : COLOR;
 };
 
-PSInput VSMain(float3 position : POSITION, float3 normal: NORMAL, float2 uv : TEXCOORD) {
+PSInput VSMain(float3 position : POSITION, float3 normal : NORMAL, float2 uv : TEXCOORD,
+  float3 translation : INSTANCEPOS, float3 pbrProperty : INSTANCEPBRPROPERTIES) {
   PSInput result;
   float4 inputPosition = float4(position, 1.0f);
-  result.worldPos = position;
-  result.position = mul(inputPosition, model);
+  float4x4 instanceModel =
+  {
+    1.f,0.f,0.f,0.f,
+    0.f,1.f,0.f,0.f,
+    0.f,0.f,1.f,0.f,
+    translation.x,translation.y,translation.z,1.f
+  }
+  result.position = mul(inputPosition, instanceModel);
+  result.worldPos = result.position;
   result.position = mul(result.position, view);
   result.position = mul(result.position, projection);
 
+  result.metallic = pbrProperty.r;
+  result.roughness = pbrProperty.g;
   return result;
 }
 
@@ -26,5 +38,5 @@ TextureCube SkyboxMap : register(t0);
 SamplerState SkyboxSampler : register(s0);
 
 float4 PSMain(PSInput input) : SV_TARGET{
-  return float4(1.0, 0.0, 0.0, 1.0);
+  return float4(input.metallic, 0.0, input.roughness, 1.0);
 }
