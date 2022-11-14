@@ -163,8 +163,12 @@ void PBSScene::LoadSizeDependentResources(ID3D12Device* pDevice, ComPtr<ID3D12Re
 }
 
 void PBSScene::Update(double elapsedTime) {
+  const float moveDistance = 5.0f * static_cast<float>(elapsedTime);
+  if (m_keyboardInput.wKeyPressed || m_keyboardInput.sKeyPressed || m_keyboardInput.aKeyPressed || m_keyboardInput.dKeyPressed) {
+    m_camera.Move(m_keyboardInput.wKeyPressed, m_keyboardInput.sKeyPressed, m_keyboardInput.aKeyPressed, m_keyboardInput.dKeyPressed, moveDistance);
+  }
+  
   const float angleChange = 2.0f * static_cast<float>(elapsedTime);
-
   if (m_keyboardInput.leftArrowPressed)
     m_camera.RotateAroundYAxis(-angleChange);
   if (m_keyboardInput.rightArrowPressed)
@@ -172,7 +176,7 @@ void PBSScene::Update(double elapsedTime) {
   if (m_keyboardInput.upArrowPressed)
     m_camera.RotatePitch(-angleChange);
   if (m_keyboardInput.downArrowPressed)
-    m_camera.RotatePitch(angleChange);
+    m_camera.RotatePitch(angleChange);  
 
   UpdateConstantBuffers();
   CommitConstantBuffers();
@@ -192,6 +196,18 @@ void PBSScene::KeyDown(UINT8 key) {
   case VK_DOWN:
     m_keyboardInput.downArrowPressed = true;
     break;
+  case 'W':
+    m_keyboardInput.wKeyPressed = true;
+    break;
+  case 'S':
+    m_keyboardInput.sKeyPressed = true;
+    break;
+  case 'A':
+    m_keyboardInput.aKeyPressed = true;
+    break;
+  case 'D':
+    m_keyboardInput.dKeyPressed = true;
+    break;
   default:
     break;
   }
@@ -210,6 +226,18 @@ void PBSScene::KeyUp(UINT8 key) {
     break;
   case VK_DOWN:
     m_keyboardInput.downArrowPressed = false;
+    break;
+  case 'W':
+    m_keyboardInput.wKeyPressed = false;
+    break;
+  case 'S':
+    m_keyboardInput.sKeyPressed = false;
+    break;
+  case 'A':
+    m_keyboardInput.aKeyPressed = false;
+    break;
+  case 'D':
+    m_keyboardInput.dKeyPressed = false;
     break;
   default:
     break;
@@ -965,7 +993,7 @@ void PBSScene::UpdateConstantBuffers() {
   const XMMATRIX identityMatrix = XMMatrixIdentity();
   XMStoreFloat4x4(&m_MVPConstantBuffer.model, identityMatrix);
 
-  m_camera.Get3DViewProjMatrices(&m_MVPConstantBuffer.view, &m_MVPConstantBuffer.projection, 60.0f, m_viewport.Width, m_viewport.Height, 0.1f, 10.0f);
+  m_camera.Get3DViewProjMatrices(&m_MVPConstantBuffer.view, &m_MVPConstantBuffer.projection, 60.0f, m_viewport.Width, m_viewport.Height, 0.1f, 100.0f);
 }
 
 void PBSScene::CommitConstantBuffers() {

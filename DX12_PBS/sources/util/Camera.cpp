@@ -65,6 +65,38 @@ void Camera::GetOrthoProjMatrices(XMFLOAT4X4 *view, XMFLOAT4X4 *proj, float widt
     XMStoreFloat4x4(proj, XMMatrixTranspose(XMMatrixOrthographicRH(width, height, 0.01f, 125.0f)));
 }
 
+void Camera::Move(bool wKeyPressed, bool sKeyPressed, bool aKeyPressed, bool dKeyPressed, float moveDistance) {
+  float moveDirection[3]{};
+  if (wKeyPressed) {
+    moveDirection[2] += 1.f;
+  }
+  if (sKeyPressed) {
+    moveDirection[2] -= 1.f;
+  }
+  if (aKeyPressed) {
+    moveDirection[0] -= 1.f;
+  }
+  if (dKeyPressed) {
+    moveDirection[0] += 1.f;
+  }
+
+  XMVECTOR moveVec = XMVectorSet(moveDirection[0], moveDirection[1], moveDirection[2], 0.0f);
+  moveVec = XMVector3Normalize(moveVec);
+  moveVec = moveVec * moveDistance;
+
+  XMVECTOR targetVec = XMVectorSubtract(mAt, mEye);
+  XMVECTOR upVec = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+  XMVECTOR rightVec = XMVector3Cross(targetVec, upVec);
+  rightVec = XMVector3Normalize(rightVec);
+  XMVECTOR targetVecXoZ = XMVector3Cross(upVec, rightVec);  // set y component to 0
+  targetVecXoZ = XMVector3Normalize(targetVecXoZ);
+
+  XMFLOAT3 moveVecFloat3{};
+  XMStoreFloat3(&moveVecFloat3, moveVec);
+  mEye += moveVecFloat3.x * rightVec + moveVecFloat3.z * targetVecXoZ;
+  mAt = XMVectorAdd(mEye, targetVec);
+}
+
 void Camera::RotateAroundYAxis(float angleRad)
 {
     XMMATRIX rotation = XMMatrixRotationY(angleRad);

@@ -14,6 +14,10 @@ struct InputState {
   bool leftArrowPressed;
   bool upArrowPressed;
   bool downArrowPressed;
+  bool wKeyPressed;
+  bool sKeyPressed;
+  bool aKeyPressed;
+  bool dKeyPressed;
 };
 
 class PBSScene {
