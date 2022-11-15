@@ -26,7 +26,7 @@ void DX12PBSSample::OnUpdate() {
 void DX12PBSSample::OnRender() {
   m_scene->Render(m_commandQueue.Get());
   //ThrowIfFailed(m_swapChain->Present(0, DXGI_PRESENT_ALLOW_TEARING));
-  ThrowIfFailed(m_swapChain->Present(0, 0));
+  ThrowIfFailed(m_swapChain->Present(1, 0));
 
   MoveToNextFrame();
 }

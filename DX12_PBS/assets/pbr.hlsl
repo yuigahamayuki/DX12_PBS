@@ -32,7 +32,7 @@ PSInput VSMain(float3 position : POSITION, float3 normal : NORMAL, float2 uv : T
   result.position = mul(result.position, view);
   result.position = mul(result.position, projection);
 
-  float4 inputNormal = float4(normal, 1.0f);
+  float4 inputNormal = float4(normal, 0.0f);
   result.normal = mul(inputNormal, instanceModel);
 
   result.camPos = camPos;
@@ -61,7 +61,7 @@ static const float PI = 3.14159265359;
 float DistributionGGX(float3 N, float3 H, float roughness) {
   float a = roughness * roughness;
   float a2 = a * a;
-  float NdotH = saturate(dot(N, H));
+  float NdotH = max(dot(N, H), 0.0);
   float NdotH2 = NdotH * NdotH;
 
   float nom = a2;
@@ -82,8 +82,8 @@ float GeometrySchlickGGX(float NdotV, float roughness) {
 }
 
 float GeometrySmith(float3 N, float3 V, float3 L, float roughness) {
-  float NdotV = saturate(dot(N, V));
-  float NdotL = saturate(dot(N, L));
+  float NdotV = max(dot(N, V), 0.0);
+  float NdotL = max(dot(N, L), 0.0);
   float ggx2 = GeometrySchlickGGX(NdotV, roughness);
   float ggx1 = GeometrySchlickGGX(NdotL, roughness);
 
@@ -101,7 +101,7 @@ float4 PSMain(PSInput input) : SV_TARGET {
   // calculate reflectance at normal incidence; if dia-electric (like plastic) use F0 
   // of 0.04 and if it's a metal, use the albedo color as F0 (metallic workflow)
   float3 F0 = float3(0.04, 0.04, 0.04);
-  float3 albedo = float3(1.0, 0.0, 0.0);
+  float3 albedo = float3(0.5, 0.0, 0.0);
   F0 = lerp(F0, albedo, input.metallic);
 
   float3 Lo = float3(0.0, 0.0, 0.0);
@@ -118,7 +118,7 @@ float4 PSMain(PSInput input) : SV_TARGET {
     float3 F = fresnelSchlick(saturate(dot(H, V)), F0);
 
     float3 numerator = NDF * G * F;
-    float denominator = 4.0 * saturate(dot(N, V)) * saturate(dot(N, L)) + 0.0001; // + 0.0001 to prevent divide by zero
+    float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001; // + 0.0001 to prevent divide by zero
     float3 specular = numerator / denominator;
 
     // kS is equal to Fresnel
@@ -132,7 +132,7 @@ float4 PSMain(PSInput input) : SV_TARGET {
     // have no diffuse light).
     kD *= 1.0 - input.metallic;
 
-    float NdotL = saturate(dot(N, L));
+    float NdotL = max(dot(N, L), 0.0);
 
     Lo += (kD * albedo / PI + specular) * radiance * NdotL;
   }

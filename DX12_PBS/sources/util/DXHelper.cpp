@@ -85,7 +85,8 @@ void CreateRootSignature(ID3D12Device* pDevice, const std::vector<DescriptorDesc
 void CreatePipelineState(ID3D12Device* pDevice, DXSample* pSample, LPCWSTR shaderFilePath, const std::vector<D3D12_INPUT_ELEMENT_DESC>& inputElementDescs,
   ID3D12RootSignature* rootSignaturePtr, const std::vector<DXGI_FORMAT>& rtvFormats, 
   bool needDepthTest, D3D12_COMPARISON_FUNC depthFunc,
-  ID3D12PipelineState** pipelineState, LPCWSTR name) {
+  ID3D12PipelineState** pipelineState, LPCWSTR name,
+  bool frontFaceCounterClockwise) {
   ComPtr<ID3DBlob> vertexShader;
   ComPtr<ID3DBlob> pixelShader;
   vertexShader = CompileShader(pSample->GetAssetFullPath(shaderFilePath).c_str(), nullptr, "VSMain", "vs_5_0");
@@ -101,6 +102,9 @@ void CreatePipelineState(ID3D12Device* pDevice, DXSample* pSample, LPCWSTR shade
   psoDesc.VS = CD3DX12_SHADER_BYTECODE(vertexShader.Get());
   psoDesc.PS = CD3DX12_SHADER_BYTECODE(pixelShader.Get());
   psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+  if (frontFaceCounterClockwise) {
+    psoDesc.RasterizerState.FrontCounterClockwise = true;
+  }
   psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
   psoDesc.SampleMask = UINT_MAX;
   psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;

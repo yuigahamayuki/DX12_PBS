@@ -10,6 +10,16 @@
 
 namespace {
 
+float clamp(float value, float low, float high) {
+  if (value < low)
+    value = low;
+
+  if (value > high)
+    value = high;
+
+  return value;
+}
+
 struct SphereInstance {
   float translation[3]{};
   float pbrProperties[3]{};  // r: metallic, g: roughness, b: ao
@@ -26,7 +36,7 @@ std::unique_ptr<SphereInstance[]> GetSphereInstanceData(UINT& instanceCount) {
   for (int row = 0; row < nrRows; ++row) {
     float metallic = (float)row / (float)nrRows;
     for (int col = 0; col < nrColumns; ++col) {
-      float roughness = (float)col / (float)nrColumns;
+      float roughness = clamp((float)col / (float)nrColumns, 0.05f, 1.0f);
       SphereInstance instance;
       instance.translation[0] = (col - (nrColumns / 2)) * spacing;
       instance.translation[1] = (row - (nrRows / 2)) * spacing;
@@ -462,7 +472,8 @@ void PBSScene::CreatePipelineStates(ID3D12Device* pDevice) {
     util::CreatePipelineState(pDevice, m_pSample, L"assets/pbr.hlsl", instanceInputElementDescs,
       m_rootSignatureScenePass.Get(), unormRtvFormats,
       true, D3D12_COMPARISON_FUNC_LESS,
-      &m_pipelineStateScenePass, L"m_pipelineStateScenePass");
+      &m_pipelineStateScenePass, L"m_pipelineStateScenePass",
+      true);
   }
 }
 

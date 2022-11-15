@@ -43,7 +43,8 @@ void CreateRootSignature(ID3D12Device* pDevice, const std::vector<DescriptorDesc
 void CreatePipelineState(ID3D12Device* pDevice, DXSample* pSample, LPCWSTR shaderFilePath, const std::vector<D3D12_INPUT_ELEMENT_DESC>& inputElementDescs,
   ID3D12RootSignature* rootSignaturePtr, const std::vector<DXGI_FORMAT>& rtvFormats,
   bool needDepthTest, D3D12_COMPARISON_FUNC depthFunc,
-  ID3D12PipelineState** pipelineState, LPCWSTR name);
+  ID3D12PipelineState** pipelineState, LPCWSTR name,
+  bool frontFaceCounterClockwise = false);
 
 void CreateBufferResourceCore(ID3D12Device* pDevice, ID3D12GraphicsCommandList* pCommandList,
   size_t dataSize, ID3D12Resource** buffer, ID3D12Resource** bufferUpload, void* data);
