@@ -16,7 +16,7 @@ FrameResource::FrameResource(ID3D12Device* pDevice, ID3D12CommandQueue* pCommand
       nullptr, D3D12_RESOURCE_STATE_GENERIC_READ));
     NAME_D3D12_OBJECT(m_constantBufferEquirectangularToCubemap);
 
-    ThrowIfFailed(util::CreateConstantBuffer(pDevice, sizeof(ModelViewProjectionConstantBuffer), &m_constantBufferMVP,
+    ThrowIfFailed(util::CreateConstantBuffer(pDevice, sizeof(SceneConstantBuffer), &m_constantBufferMVP,
       nullptr, D3D12_RESOURCE_STATE_GENERIC_READ));
     NAME_D3D12_OBJECT(m_constantBufferMVP);
 

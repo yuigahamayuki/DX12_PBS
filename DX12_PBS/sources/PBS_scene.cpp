@@ -566,13 +566,15 @@ void PBSScene::CreateAssetResources(ID3D12Device* pDevice, ID3D12GraphicsCommand
 
 void PBSScene::UpdateConstantBuffers() {
   const XMMATRIX identityMatrix = XMMatrixIdentity();
-  XMStoreFloat4x4(&m_MVPConstantBuffer.model, identityMatrix);
+  XMStoreFloat4x4(&m_sceneConstantBuffer.model, identityMatrix);
 
-  m_camera.Get3DViewProjMatrices(&m_MVPConstantBuffer.view, &m_MVPConstantBuffer.projection, 60.0f, m_viewport.Width, m_viewport.Height, 0.1f, 100.0f);
+  m_camera.Get3DViewProjMatrices(&m_sceneConstantBuffer.view, &m_sceneConstantBuffer.projection, 60.0f, m_viewport.Width, m_viewport.Height, 0.1f, 100.0f);
+
+  XMStoreFloat4(&m_sceneConstantBuffer.camPos, m_camera.mEye);
 }
 
 void PBSScene::CommitConstantBuffers() {
-  memcpy(m_pCurrentFrameResource->m_pConstantBufferMVPWO, &m_MVPConstantBuffer, sizeof(m_MVPConstantBuffer));  
+  memcpy(m_pCurrentFrameResource->m_pConstantBufferMVPWO, &m_sceneConstantBuffer, sizeof(m_sceneConstantBuffer));  
 }
 
 void PBSScene::ScenePass() {

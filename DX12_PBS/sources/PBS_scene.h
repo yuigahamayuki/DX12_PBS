@@ -91,7 +91,7 @@ private:
   UINT m_frameIndex = 0;
   std::vector<std::unique_ptr<FrameResource>> m_frameResources;
   FrameResource* m_pCurrentFrameResource = nullptr;
-  ModelViewProjectionConstantBuffer m_MVPConstantBuffer;
+  SceneConstantBuffer m_sceneConstantBuffer;
   LightStatesConstantBuffer m_lights;
 
   // Heap objects.

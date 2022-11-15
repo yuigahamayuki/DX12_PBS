@@ -96,7 +96,7 @@ void DX12PBSSample::LoadPipeline() {
   swapChainDesc.SampleDesc.Count = 1;
 
   // It is recommended to always use the tearing flag when it is available.
-  swapChainDesc.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
+  //swapChainDesc.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
 
   ComPtr<IDXGISwapChain1> swapChain;
   // DXGI does not allow creating a swapchain targeting a window which has fullscreen styles(no border + topmost).

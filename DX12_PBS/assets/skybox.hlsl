@@ -1,4 +1,4 @@
-cbuffer ModelViewProjectionConstantBuffer : register(b0)
+cbuffer SceneConstantBuffer : register(b0)
 {
   float4x4 model;
   float4x4 view;

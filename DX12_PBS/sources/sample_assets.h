@@ -10,10 +10,11 @@ struct ViewProjectionConstantBuffer {
   float padding[32];  // 256 bytes alignment
 };
 
-struct ModelViewProjectionConstantBuffer {
+struct SceneConstantBuffer {
   XMFLOAT4X4 model;
   XMFLOAT4X4 view;
   XMFLOAT4X4 projection;
+  XMFLOAT4 camPos;
 };
 
 struct LightState {
