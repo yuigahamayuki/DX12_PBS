@@ -90,7 +90,7 @@ float GeometrySmith(float3 N, float3 V, float3 L, float roughness) {
   return ggx1 * ggx2;
 }
 
-float fresnelSchlick(float cosTheta, float3 F0) {
+float3 fresnelSchlick(float cosTheta, float3 F0) {
   return F0 + (1.0 - F0) * pow(saturate(1.0 - cosTheta), 5.0);
 }
 
