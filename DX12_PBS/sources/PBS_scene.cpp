@@ -308,16 +308,16 @@ void PBSScene::ConvolveIrradianceMap() {
   float cameraTargets[] = {
   1.0f, 0.0f, 0.0f,
   -1.0f, 0.0f, 0.0f,
-  0.0f, 1.0f, 0.0f,
   0.0f, -1.0f, 0.0f,
+  0.0f, 1.0f, 0.0f,
   0.0f, 0.0f, 1.0f,
   0.0f, 0.0f, -1.0f
   };
   float cameraUps[] = {
     0.0f, -1.0f,  0.0f,
     0.0f, -1.0f,  0.0f,
-    0.0f,  0.0f,  1.0f,  // TODO: (0, 0, 1) or (0, 0, -1)
-    0.0f,  0.0f, -1.0f,  // TODO: (0, 0, -1) or (0, 0, 1)
+    0.0f,  0.0f,  -1.0f,
+    0.0f,  0.0f, 1.0f,
     0.0f, -1.0f,  0.0f,
     0.0f, -1.0f,  0.0f
   };
