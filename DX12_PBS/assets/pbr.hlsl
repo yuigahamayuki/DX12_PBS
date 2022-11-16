@@ -53,8 +53,8 @@ cbuffer LightStatesConstantBuffer : register(b1)
   LightState lights[NUM_LIGHTS];
 };
 
-TextureCube SkyboxMap : register(t0);
-SamplerState SkyboxSampler : register(s0);
+TextureCube irradianceMap : register(t0);
+SamplerState irradianceMapSampler : register(s0);
 
 static const float PI = 3.14159265359;
 
@@ -137,7 +137,12 @@ float4 PSMain(PSInput input) : SV_TARGET {
     Lo += (kD * albedo / PI + specular) * radiance * NdotL;
   }
 
-  float3 ambient = 0.03 * albedo;
+  float3 kS = fresnelSchlick(max(dot(N, V), 0.0), F0);
+  float3 kD = 1.0 - kS;
+  kD *= 1.0 - input.metallic;
+  float3 irradiance = irradianceMap.Sample(irradianceMapSampler, N).rgb;
+  float3 diffuse = irradiance * albedo;
+  float3 ambient = kD * diffuse;
 
   float3 color = ambient + Lo;
 
