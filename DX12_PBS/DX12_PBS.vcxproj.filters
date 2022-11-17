@@ -75,5 +75,8 @@
     <CopyFileToFolders Include="assets\pbr.hlsl">
       <Filter>assets</Filter>
     </CopyFileToFolders>
+    <CopyFileToFolders Include="assets\prefilter.hlsl">
+      <Filter>assets</Filter>
+    </CopyFileToFolders>
   </ItemGroup>
 </Project>

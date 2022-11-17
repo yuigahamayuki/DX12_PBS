@@ -17,6 +17,9 @@ public:
   ComPtr<ID3D12Resource> m_constantBufferIrradianceConvolution;
   void* m_pConstantBufferIrradianceConvolutionWO = nullptr;
 
+  ComPtr<ID3D12Resource> m_constantBufferPrefilter;
+  void* m_pConstantBufferPrefilterWO = nullptr;
+
   ComPtr<ID3D12Resource> m_constantBufferLightStates;
   void* m_pConstantBufferLightStatesWO = nullptr;
 

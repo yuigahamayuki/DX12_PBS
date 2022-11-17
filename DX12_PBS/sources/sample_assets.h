@@ -10,6 +10,11 @@ struct ViewProjectionConstantBuffer {
   float padding[32];  // 256 bytes alignment
 };
 
+struct PrefilterConstantBuffer {
+  float roughness;
+  float padding[63];  // 256 bytes alignment
+};
+
 struct SceneConstantBuffer {
   XMFLOAT4X4 model;
   XMFLOAT4X4 view;

@@ -46,6 +46,7 @@ private:
 
   void EquirectangularToCubemap();
   void ConvolveIrradianceMap();
+  void PrefilterEnvironmentMap();
 
   void CreateDescriptorHeaps(ID3D12Device* pDevice);
   void CreateRootSignatures(ID3D12Device* pDevice);
@@ -66,12 +67,13 @@ private:
   UINT GetNumRtvDescriptors() const {
     // 1st 6: 6 faces of skybox cubemap
     // 2nd 6: 6 faces of irradiance cubemap
-    return m_frameCount + kCubeMapArraySize + kCubeMapArraySize;
+    // 3nd: 6 * kPrefilterMapMipLevels of prefilter map
+    return m_frameCount + kCubeMapArraySize + kCubeMapArraySize + kCubeMapArraySize * kPrefilterMapMipLevels;
   }
 
   UINT GetNumCbvSrvUavDescriptors() const {
-    // 1 hdr texture + 1 skybox cubemap + 1 irradiance map
-    return 1 + 1 + 1;
+    // 1 hdr texture + 1 skybox cubemap + 1 irradiance map + kPrefilterMapMipLevels prefilter map
+    return 1 + 1 + 1 + kPrefilterMapMipLevels;
   }
 
   inline CD3DX12_CPU_DESCRIPTOR_HANDLE GetCurrentBackBufferRtvCpuHandle() const {
@@ -84,6 +86,9 @@ private:
   static constexpr UINT16 kCubeMapArraySize = 6;  // a cube has 6 faces
   static constexpr UINT kIrradianceMapWidth = 32;
   static constexpr UINT kIrradianceMapHeight = 32;
+  static constexpr UINT kPrefilterMapWidth = 128;
+  static constexpr UINT kPrefilterMapHeight = 128;
+  static constexpr UINT kPrefilterMapMipLevels = 5;
 
   UINT m_frameCount = 0;
 
@@ -105,7 +110,8 @@ private:
   ComPtr<ID3D12RootSignature> m_rootSignatureEquirectangularToCubemap;
   ComPtr<ID3D12PipelineState> m_pipelineStateEquirectangularToCubemap;
   ComPtr<ID3D12PipelineState> m_pipelineStateSkybox;
-  ComPtr<ID3D12PipelineState> m_pipelineIrradianceConvolution;
+  ComPtr<ID3D12PipelineState> m_pipelineStateIrradianceConvolution;
+  ComPtr<ID3D12PipelineState> m_pipelineStatePrefilter;
   ComPtr<ID3D12RootSignature> m_rootSignatureScenePass;
   ComPtr<ID3D12PipelineState> m_pipelineStateScenePass;
   ComPtr<ID3D12Resource> m_vertexBufferCube;
@@ -115,6 +121,7 @@ private:
   ComPtr<ID3D12Resource> m_HDRTextureUpload;
   ComPtr<ID3D12Resource> m_cubeMap;
   ComPtr<ID3D12Resource> m_irradianceMap;
+  std::vector<ComPtr<ID3D12Resource>> m_prefilterMap;  // mipmap
   ComPtr<ID3D12Resource> m_vertexBufferSphere;
   ComPtr<ID3D12Resource> m_vertexBufferSphereUpload;
   D3D12_VERTEX_BUFFER_VIEW m_vertexBufferViewSphere{};

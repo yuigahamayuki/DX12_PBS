@@ -187,7 +187,7 @@ void CreateTextureResourceCore(ID3D12Device* pDevice, ID3D12GraphicsCommandList*
   ID3D12Resource** texture, D3D12_RESOURCE_STATES initialState,
   bool needUpload, ID3D12Resource** textureUpload, void* textureData, size_t rowPitch, size_t slicePitch,
   bool asSRV, D3D12_SRV_DIMENSION srvViewDimension, D3D12_CPU_DESCRIPTOR_HANDLE srvCPUHandle) {
-  CD3DX12_RESOURCE_DESC texDesc(
+  CD3DX12_RESOURCE_DESC texDescOrigin(
     dimension,
     0,
     width,
@@ -204,10 +204,12 @@ void CreateTextureResourceCore(ID3D12Device* pDevice, ID3D12GraphicsCommandList*
   ThrowIfFailed(pDevice->CreateCommittedResource(
     &defaultHeapProperty,
     D3D12_HEAP_FLAG_NONE,
-    &texDesc,
+    &texDescOrigin,
     initialState,
     nullptr,
     IID_PPV_ARGS(texture)));
+
+  auto texDesc = (*texture)->GetDesc();
 
   if (needUpload) {
     const UINT subresourceCount = texDesc.DepthOrArraySize * texDesc.MipLevels;

@@ -218,6 +218,7 @@ void PBSScene::Render(ID3D12CommandQueue* pCommandQueue) {
 void PBSScene::GPUWorkForInitialization(ID3D12CommandQueue* pCommandQueue) {
   EquirectangularToCubemap();
   ConvolveIrradianceMap();
+  PrefilterEnvironmentMap();
 
   ThrowIfFailed(m_commandList->Close());
   ID3D12CommandList* command_lists[] = { m_commandList.Get() };
@@ -261,7 +262,7 @@ void PBSScene::EquirectangularToCubemap() {
     0.0f, -1.0f,  0.0f,
     0.0f, -1.0f,  0.0f
   };
-  std::vector<ViewProjectionConstantBuffer> constantBuffers(6);
+  std::vector<ViewProjectionConstantBuffer> constantBuffers(kCubeMapArraySize);
   for (UINT16 i = 0; i < kCubeMapArraySize; ++i) {
     XMVECTOR at = XMVectorSet(cameraTargets[3 * i], cameraTargets[3 * i + 1], cameraTargets[3 * i + 2], 0.0f);
     XMVECTOR up = XMVectorSet(cameraUps[3 * i], cameraUps[3 * i + 1], cameraUps[3 * i + 2], 1.0f);
@@ -270,7 +271,7 @@ void PBSScene::EquirectangularToCubemap() {
       90.0f, static_cast<float>(kCubeMapWidth), static_cast<float>(kCubeMapHeight), 0.1f, 10.0f);
   }
   size_t constantBufferSize = sizeof(ViewProjectionConstantBuffer);
-  memcpy(m_pCurrentFrameResource->m_pConstantBufferEquirectangularToCubemapWO, constantBuffers.data(), constantBufferSize * 6);
+  memcpy(m_pCurrentFrameResource->m_pConstantBufferEquirectangularToCubemapWO, constantBuffers.data(), constantBufferSize * kCubeMapArraySize);
   CD3DX12_CPU_DESCRIPTOR_HANDLE cubeMapRTVHandle(m_rtvHeap->GetCPUDescriptorHandleForHeapStart(), m_frameCount, m_rtvDescriptorSize);
   for (UINT16 i = 0; i < kCubeMapArraySize; ++i) {
     m_commandList->OMSetRenderTargets(1, &cubeMapRTVHandle, false, nullptr);
@@ -291,7 +292,7 @@ void PBSScene::EquirectangularToCubemap() {
 }
 
 void PBSScene::ConvolveIrradianceMap() {
-  m_commandList->SetPipelineState(m_pipelineIrradianceConvolution.Get());
+  m_commandList->SetPipelineState(m_pipelineStateIrradianceConvolution.Get());
 
   CD3DX12_GPU_DESCRIPTOR_HANDLE skyboxGpuHandle(m_cbvSrvHeap->GetGPUDescriptorHandleForHeapStart());
   skyboxGpuHandle.Offset(m_cbvSrvDescriptorSize);
@@ -303,47 +304,66 @@ void PBSScene::ConvolveIrradianceMap() {
   m_commandList->RSSetViewports(1, &viewport);
   m_commandList->RSSetScissorRects(1, &scissorRect);
 
-  Camera camera;
-  XMVECTOR eye = XMVectorSet(0.0f, 0.0, 0.0, 1.0f);
-  float cameraTargets[] = {
-  1.0f, 0.0f, 0.0f,
-  -1.0f, 0.0f, 0.0f,
-  0.0f, -1.0f, 0.0f,
-  0.0f, 1.0f, 0.0f,
-  0.0f, 0.0f, 1.0f,
-  0.0f, 0.0f, -1.0f
-  };
-  float cameraUps[] = {
-    0.0f, -1.0f,  0.0f,
-    0.0f, -1.0f,  0.0f,
-    0.0f,  0.0f,  -1.0f,
-    0.0f,  0.0f, 1.0f,
-    0.0f, -1.0f,  0.0f,
-    0.0f, -1.0f,  0.0f
-  };
-  std::vector<ViewProjectionConstantBuffer> constantBuffers(6);
-  for (UINT16 i = 0; i < kCubeMapArraySize; ++i) {
-    XMVECTOR at = XMVectorSet(cameraTargets[3 * i], cameraTargets[3 * i + 1], cameraTargets[3 * i + 2], 0.0f);
-    XMVECTOR up = XMVectorSet(cameraUps[3 * i], cameraUps[3 * i + 1], cameraUps[3 * i + 2], 1.0f);
-    camera.Set(eye, at, up);
-    camera.Get3DViewProjMatrices(&constantBuffers[i].view, &constantBuffers[i].projection,
-      90.0f, static_cast<float>(kCubeMapWidth), static_cast<float>(kCubeMapHeight), 0.1f, 10.0f);
-  }
   size_t constantBufferSize = sizeof(ViewProjectionConstantBuffer);
-  memcpy(m_pCurrentFrameResource->m_pConstantBufferIrradianceConvolutionWO, constantBuffers.data(), constantBufferSize * 6);
   CD3DX12_CPU_DESCRIPTOR_HANDLE irradianceMapRTVHandle(m_rtvHeap->GetCPUDescriptorHandleForHeapStart(), m_frameCount + kCubeMapArraySize, m_rtvDescriptorSize);
   for (UINT16 i = 0; i < kCubeMapArraySize; ++i) {
     m_commandList->OMSetRenderTargets(1, &irradianceMapRTVHandle, false, nullptr);
     irradianceMapRTVHandle.Offset(1, m_rtvDescriptorSize);
     
     m_commandList->SetGraphicsRootConstantBufferView(0,
-      m_pCurrentFrameResource->m_constantBufferIrradianceConvolution->GetGPUVirtualAddress() + i * constantBufferSize);
+      m_pCurrentFrameResource->m_constantBufferEquirectangularToCubemap->GetGPUVirtualAddress() + i * constantBufferSize);
 
     m_commandList->DrawInstanced(36, 1, 0, 0);
   }
 
   D3D12_RESOURCE_BARRIER irradianceMapBarrier = CD3DX12_RESOURCE_BARRIER::Transition(m_irradianceMap.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
   m_commandList->ResourceBarrier(1, &irradianceMapBarrier);
+}
+
+void PBSScene::PrefilterEnvironmentMap() {
+  m_commandList->SetGraphicsRootSignature(m_rootSignatureScenePass.Get());
+  m_commandList->SetPipelineState(m_pipelineStatePrefilter.Get());
+
+  CD3DX12_GPU_DESCRIPTOR_HANDLE skyboxGpuHandle(m_cbvSrvHeap->GetGPUDescriptorHandleForHeapStart());
+  skyboxGpuHandle.Offset(m_cbvSrvDescriptorSize);
+  m_commandList->SetGraphicsRootDescriptorTable(2, skyboxGpuHandle);
+
+  std::vector<PrefilterConstantBuffer> prefilterConstantBuffers(kPrefilterMapMipLevels);
+  for (UINT mip = 0; mip < kPrefilterMapMipLevels; ++mip) {
+    float roughness = (float)mip / (float)(kPrefilterMapMipLevels - 1);
+    prefilterConstantBuffers[mip].roughness = roughness;
+  }
+  size_t prefilterConstantBufferSize = sizeof(PrefilterConstantBuffer);
+  memcpy(m_pCurrentFrameResource->m_pConstantBufferPrefilterWO, prefilterConstantBuffers.data(), prefilterConstantBufferSize * kPrefilterMapMipLevels);
+  size_t viewProjectionConstantBufferSize = sizeof(ViewProjectionConstantBuffer);
+  UINT width = kPrefilterMapWidth;
+  UINT height = kPrefilterMapHeight;
+  CD3DX12_CPU_DESCRIPTOR_HANDLE prefilterMapRTVHandle(m_rtvHeap->GetCPUDescriptorHandleForHeapStart(), m_frameCount + kCubeMapArraySize + kCubeMapArraySize, m_rtvDescriptorSize);
+  for (UINT mip = 0; mip < kPrefilterMapMipLevels; ++mip) {
+    if (mip != 0) {
+      width /= 2; height /= 2;
+    }
+    CD3DX12_VIEWPORT viewport{ 0.f, 0.f, static_cast<float>(width), static_cast<float>(height) };
+    CD3DX12_RECT scissorRect{ 0, 0, static_cast<LONG>(width), static_cast<LONG>(height) };
+    m_commandList->RSSetViewports(1, &viewport);
+    m_commandList->RSSetScissorRects(1, &scissorRect);
+    m_commandList->SetGraphicsRootConstantBufferView(1, m_pCurrentFrameResource->m_constantBufferPrefilter->GetGPUVirtualAddress() + mip * prefilterConstantBufferSize);
+    for (UINT16 i = 0; i < kCubeMapArraySize; ++i) {
+      m_commandList->OMSetRenderTargets(1, &prefilterMapRTVHandle, false, nullptr);
+      prefilterMapRTVHandle.Offset(1, m_rtvDescriptorSize);
+
+      m_commandList->SetGraphicsRootConstantBufferView(0,
+        m_pCurrentFrameResource->m_constantBufferEquirectangularToCubemap->GetGPUVirtualAddress() + i * viewProjectionConstantBufferSize);
+
+      m_commandList->DrawInstanced(36, 1, 0, 0);
+    }
+  }
+
+  D3D12_RESOURCE_BARRIER prefilterMapBarriers[kPrefilterMapMipLevels]{};
+  for (UINT mip = 0; mip < kPrefilterMapMipLevels; ++mip) {
+    prefilterMapBarriers[mip] = CD3DX12_RESOURCE_BARRIER::Transition(m_prefilterMap[mip].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+  }
+  m_commandList->ResourceBarrier(_countof(prefilterMapBarriers), prefilterMapBarriers);
 }
 
 void PBSScene::InitializeCameraAndLights() {
@@ -459,12 +479,20 @@ void PBSScene::CreatePipelineStates(ID3D12Device* pDevice) {
       &m_pipelineStateSkybox, L"m_pipelineStateSkybox");
   }
 
-  // Create the pipeline state for generating irradiance map
+  // Create the pipeline state for generating irradiance map.
   {
     util::CreatePipelineState(pDevice, m_pSample, L"assets/irradiance_convolution.hlsl", standardInputElementDescs,
       m_rootSignatureEquirectangularToCubemap.Get(), floatRtvFormats,
       false, D3D12_COMPARISON_FUNC_LESS,
-      &m_pipelineIrradianceConvolution, L"m_pipelineIrradianceConvolution");
+      &m_pipelineStateIrradianceConvolution, L"m_pipelineIrradianceConvolution");
+  }
+
+  // Create the pipeline state for generating prefilter map.
+  {
+    util::CreatePipelineState(pDevice, m_pSample, L"assets/prefilter.hlsl", standardInputElementDescs,
+      m_rootSignatureScenePass.Get(), floatRtvFormats,
+      false, D3D12_COMPARISON_FUNC_LESS,
+      &m_pipelineStatePrefilter, L"m_pipelineStatePrefilter");
   }
 
   // Create the scene pass pipeline.
@@ -505,7 +533,7 @@ void PBSScene::CreateAssetResources(ID3D12Device* pDevice, ID3D12GraphicsCommand
       m_vertexBufferViewCube, static_cast<UINT>(Model::GetVertexStride()));
   }
 
-  // Create HDR texture, cubemap, irradiance map resource.
+  // Create HDR texture, cubemap, irradiance map, prefilter map resource.
   {
     // Get a handle to the start of the descriptor heap.
     CD3DX12_CPU_DESCRIPTOR_HANDLE cbvSrvCpuHandle(m_cbvSrvHeap->GetCPUDescriptorHandleForHeapStart());
@@ -546,6 +574,30 @@ void PBSScene::CreateAssetResources(ID3D12Device* pDevice, ID3D12GraphicsCommand
       true, &irradianceMapStartRtvCpuHandle, m_rtvDescriptorSize);
     cbvSrvCpuHandle.Offset(m_cbvSrvDescriptorSize);
     cbvSrvGpuHandle.Offset(m_cbvSrvDescriptorSize);
+
+    // *** prefilter map ***
+    m_prefilterMap.resize(kPrefilterMapMipLevels);
+    CD3DX12_CPU_DESCRIPTOR_HANDLE prefilterMapStartRtvCpuHandle(m_rtvHeap->GetCPUDescriptorHandleForHeapStart(), m_frameCount + kCubeMapArraySize + kCubeMapArraySize, m_rtvDescriptorSize);
+    size_t prefilterMapMipWidth = kPrefilterMapWidth;
+    UINT prefilterMapMipHeight = kPrefilterMapHeight;
+    for (UINT i = 0; i < kPrefilterMapMipLevels; ++i) {
+      std::wstring resourceName(L"m_prefilterMap");
+      resourceName += std::to_wstring(i);
+      if (i != 0) {
+        prefilterMapMipWidth /= 2;
+        prefilterMapMipHeight /= 2;
+      }
+      util::CreateCubeTextureResource(pDevice, pCommandList,
+        prefilterMapMipWidth, prefilterMapMipHeight, 1, metaData.format, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
+        &m_prefilterMap[i], resourceName.c_str(), D3D12_RESOURCE_STATE_RENDER_TARGET,
+        false, nullptr, nullptr, 0, 0,
+        true, &cbvSrvCpuHandle,
+        true, &prefilterMapStartRtvCpuHandle, m_rtvDescriptorSize);
+      cbvSrvCpuHandle.Offset(m_cbvSrvDescriptorSize);
+      cbvSrvGpuHandle.Offset(m_cbvSrvDescriptorSize);
+      prefilterMapStartRtvCpuHandle.Offset(kCubeMapArraySize, m_rtvDescriptorSize);
+    }
+
   }
 
   // Create the sphere vertex, index, and instance buffer.

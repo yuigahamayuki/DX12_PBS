@@ -25,6 +25,11 @@ FrameResource::FrameResource(ID3D12Device* pDevice, ID3D12CommandQueue* pCommand
       nullptr, D3D12_RESOURCE_STATE_GENERIC_READ));
     NAME_D3D12_OBJECT(m_constantBufferIrradianceConvolution);
 
+    constexpr UINT8 kPrefilterMapMipLevels = 5;
+    ThrowIfFailed(util::CreateConstantBuffer(pDevice, sizeof(PrefilterConstantBuffer) * kPrefilterMapMipLevels, &m_constantBufferPrefilter,
+      nullptr, D3D12_RESOURCE_STATE_GENERIC_READ));
+    NAME_D3D12_OBJECT(m_constantBufferPrefilter);
+
     // constant buffer for light states
     ThrowIfFailed(util::CreateConstantBuffer(pDevice, sizeof(LightStatesConstantBuffer), &m_constantBufferLightStates,
       nullptr, D3D12_RESOURCE_STATE_GENERIC_READ));
@@ -36,6 +41,7 @@ FrameResource::FrameResource(ID3D12Device* pDevice, ID3D12CommandQueue* pCommand
     ThrowIfFailed(m_constantBufferEquirectangularToCubemap->Map(0, &readRange, &m_pConstantBufferEquirectangularToCubemapWO));
     ThrowIfFailed(m_constantBufferMVP->Map(0, &readRange, &m_pConstantBufferMVPWO));
     ThrowIfFailed(m_constantBufferIrradianceConvolution->Map(0, &readRange, &m_pConstantBufferIrradianceConvolutionWO));
+    ThrowIfFailed(m_constantBufferPrefilter->Map(0, &readRange, &m_pConstantBufferPrefilterWO));
     ThrowIfFailed(m_constantBufferLightStates->Map(0, &readRange, &m_pConstantBufferLightStatesWO));
   }
 }
