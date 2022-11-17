@@ -266,12 +266,22 @@ void Create2DTextureResource(ID3D12Device* pDevice, ID3D12GraphicsCommandList* p
   size_t width, UINT height, UINT16 mipLevels, DXGI_FORMAT format, D3D12_RESOURCE_FLAGS flags,
   ID3D12Resource** texture, LPCWSTR name, D3D12_RESOURCE_STATES initialState,
   bool needUpload, ID3D12Resource** textureUpload, void* textureData, size_t rowPitch, size_t slicePitch,
-  bool asSRV, const D3D12_CPU_DESCRIPTOR_HANDLE* srvCPUHandle) {
+  bool asSRV, const D3D12_CPU_DESCRIPTOR_HANDLE* srvCPUHandle,
+  bool asRTV, const D3D12_CPU_DESCRIPTOR_HANDLE* rtvCPUHandle) {
   CreateTextureResourceCore(pDevice, pCommandList,
     D3D12_RESOURCE_DIMENSION_TEXTURE2D, width, height, 1, mipLevels, format, flags,
     texture, initialState,
     needUpload, textureUpload, textureData, rowPitch, slicePitch,
     asSRV, D3D12_SRV_DIMENSION_TEXTURE2D, *srvCPUHandle);
+
+  if (asRTV) {
+    D3D12_RENDER_TARGET_VIEW_DESC rtvDesc{};
+    rtvDesc.Format = format;
+    rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
+    rtvDesc.Texture2D.MipSlice = 0;
+    rtvDesc.Texture2D.PlaneSlice = 0;
+    pDevice->CreateRenderTargetView(*texture, &rtvDesc, *rtvCPUHandle);
+  }
 
   SetName(*texture, name);
 }

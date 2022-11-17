@@ -219,6 +219,7 @@ void PBSScene::GPUWorkForInitialization(ID3D12CommandQueue* pCommandQueue) {
   EquirectangularToCubemap();
   ConvolveIrradianceMap();
   PrefilterEnvironmentMap();
+  PrecomputeBRDFLut();
 
   ThrowIfFailed(m_commandList->Close());
   ID3D12CommandList* command_lists[] = { m_commandList.Get() };
@@ -320,7 +321,7 @@ void PBSScene::ConvolveIrradianceMap() {
   m_commandList->ResourceBarrier(1, &irradianceMapBarrier);
 }
 
-void PBSScene::PrefilterEnvironmentMap() {
+void PBSScene::PrefilterEnvironmentMap() {  
   m_commandList->SetGraphicsRootSignature(m_rootSignatureScenePass.Get());
   m_commandList->SetPipelineState(m_pipelineStatePrefilter.Get());
 
@@ -364,6 +365,24 @@ void PBSScene::PrefilterEnvironmentMap() {
     prefilterMapBarriers[mip] = CD3DX12_RESOURCE_BARRIER::Transition(m_prefilterMap[mip].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
   }
   m_commandList->ResourceBarrier(_countof(prefilterMapBarriers), prefilterMapBarriers);
+}
+
+void PBSScene::PrecomputeBRDFLut() {
+  m_commandList->SetGraphicsRootSignature(m_rootSignatureBRDFLut.Get());
+  m_commandList->SetPipelineState(m_pipelineStateBRDFLut.Get());
+
+  m_commandList->IASetVertexBuffers(0, 1, &m_vertexBufferViewQuad);
+  m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+
+  CD3DX12_VIEWPORT viewport{ 0.f, 0.f, static_cast<float>(kBRDFLutWidth), static_cast<float>(kBRDFLutHeight) };
+  CD3DX12_RECT scissorRect{ 0, 0, static_cast<LONG>(kBRDFLutWidth), static_cast<LONG>(kBRDFLutHeight) };
+  m_commandList->RSSetViewports(1, &viewport);
+  m_commandList->RSSetScissorRects(1, &scissorRect);
+
+  CD3DX12_CPU_DESCRIPTOR_HANDLE BRDFLutRTVHandle(m_rtvHeap->GetCPUDescriptorHandleForHeapStart(), m_frameCount + kCubeMapArraySize + kCubeMapArraySize + kCubeMapArraySize * kPrefilterMapMipLevels, m_rtvDescriptorSize);
+  m_commandList->OMSetRenderTargets(1, &BRDFLutRTVHandle, false, nullptr);
+
+  m_commandList->DrawInstanced(4, 1, 0, 0);
 }
 
 void PBSScene::InitializeCameraAndLights() {
@@ -425,6 +444,13 @@ void PBSScene::CreateRootSignatures(ID3D12Device* pDevice) {
     util::CreateRootSignature(pDevice, descriptorDescs, samplerDescs, &m_rootSignatureEquirectangularToCubemap, L"m_rootSignatureEquirectangularToCubemap");
   }
 
+  // Create the root signature for generating BRDF LUT.
+  {
+    std::vector<util::DescriptorDesc> nullDescriptorDescs;
+    std::vector<util::SamplerDesc> nullSamplerDescs;
+    util::CreateRootSignature(pDevice, nullDescriptorDescs, nullSamplerDescs, &m_rootSignatureBRDFLut, L"m_rootSignatureBRDFLut");
+  }
+
   // Create a root signature for scene pass
   {
     std::vector<util::DescriptorDesc> descriptorDescs;
@@ -463,6 +489,9 @@ void PBSScene::CreatePipelineStates(ID3D12Device* pDevice) {
 
   std::vector<DXGI_FORMAT> floatRtvFormats(1);
   floatRtvFormats[0] = DXGI_FORMAT_R32G32B32A32_FLOAT;
+
+  std::vector<DXGI_FORMAT> lutRtvFormats(1);
+  lutRtvFormats[0] = DXGI_FORMAT_R16G16_FLOAT;
   // Create the equirectangular to cubemap pipeline state.
   {
     util::CreatePipelineState(pDevice, m_pSample, L"assets/equirectangular_to_cubemap.hlsl", standardInputElementDescs,
@@ -493,6 +522,15 @@ void PBSScene::CreatePipelineStates(ID3D12Device* pDevice) {
       m_rootSignatureScenePass.Get(), floatRtvFormats,
       false, D3D12_COMPARISON_FUNC_LESS,
       &m_pipelineStatePrefilter, L"m_pipelineStatePrefilter");
+  }
+
+  // Create the pipeline state for generating BRDF LUT.
+  {
+    util::CreatePipelineState(pDevice, m_pSample, L"assets/brdf.hlsl", standardInputElementDescs,
+      m_rootSignatureBRDFLut.Get(), lutRtvFormats,
+      false, D3D12_COMPARISON_FUNC_LESS,
+      &m_pipelineStateBRDFLut, L"m_pipelineStateBRDFLut",
+      true);
   }
 
   // Create the scene pass pipeline.
@@ -533,7 +571,7 @@ void PBSScene::CreateAssetResources(ID3D12Device* pDevice, ID3D12GraphicsCommand
       m_vertexBufferViewCube, static_cast<UINT>(Model::GetVertexStride()));
   }
 
-  // Create HDR texture, cubemap, irradiance map, prefilter map resource.
+  // Create HDR texture, cubemap, irradiance map, prefilter map, and BRDF LUT resource.
   {
     // Get a handle to the start of the descriptor heap.
     CD3DX12_CPU_DESCRIPTOR_HANDLE cbvSrvCpuHandle(m_cbvSrvHeap->GetCPUDescriptorHandleForHeapStart());
@@ -549,7 +587,8 @@ void PBSScene::CreateAssetResources(ID3D12Device* pDevice, ID3D12GraphicsCommand
       metaData.width, static_cast<UINT>(metaData.height), static_cast<UINT16>(metaData.mipLevels), metaData.format, D3D12_RESOURCE_FLAG_NONE,
       &m_HDRTexture, L"m_HDRTexture", D3D12_RESOURCE_STATE_COPY_DEST,
       true, &m_HDRTextureUpload, image.GetPixels(), image.GetImages()->rowPitch, image.GetImages()->slicePitch,
-      true, &cbvSrvCpuHandle);
+      true, &cbvSrvCpuHandle,
+      false, nullptr);
     cbvSrvCpuHandle.Offset(m_cbvSrvDescriptorSize);
     cbvSrvGpuHandle.Offset(m_cbvSrvDescriptorSize);
 
@@ -598,6 +637,26 @@ void PBSScene::CreateAssetResources(ID3D12Device* pDevice, ID3D12GraphicsCommand
       prefilterMapStartRtvCpuHandle.Offset(kCubeMapArraySize, m_rtvDescriptorSize);
     }
 
+    // *** BRDF LUT ***
+    CD3DX12_CPU_DESCRIPTOR_HANDLE BRDFLutRtvCpuHandle(m_rtvHeap->GetCPUDescriptorHandleForHeapStart(), m_frameCount + kCubeMapArraySize + kCubeMapArraySize + kCubeMapArraySize * kPrefilterMapMipLevels, m_rtvDescriptorSize);
+    util::Create2DTextureResource(pDevice, pCommandList,
+      kBRDFLutWidth, kBRDFLutHeight, 1, DXGI_FORMAT_R16G16_FLOAT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
+      &m_BRDFLut, L"m_BRDFLut", D3D12_RESOURCE_STATE_RENDER_TARGET,
+      false, nullptr, nullptr, 0, 0,
+      true, &cbvSrvCpuHandle,
+      true, &BRDFLutRtvCpuHandle);
+    cbvSrvCpuHandle.Offset(m_cbvSrvDescriptorSize);
+    cbvSrvGpuHandle.Offset(m_cbvSrvDescriptorSize);
+  }
+
+  // Create the quad vertex buffer.
+  {
+    QuadModel quadModel;
+    std::unique_ptr<Model::Vertex[]> vertices = quadModel.GetVertexData();
+    size_t vertexDataSize = quadModel.GetVertexDataSize();
+    util::CreateVertexBufferResource(pDevice, pCommandList,
+      vertexDataSize, &m_vertexBufferQuad, L"m_vertexBufferQuad", &m_vertexBufferQuadUpload, vertices.get(),
+      m_vertexBufferViewQuad, static_cast<UINT>(Model::GetVertexStride()));
   }
 
   // Create the sphere vertex, index, and instance buffer.

@@ -143,6 +143,28 @@ public:
   }
 };
 
+class QuadModel {
+public:
+  std::unique_ptr<Model::Vertex[]> GetVertexData() const {
+    std::unique_ptr<Model::Vertex[]> vertices_ptr = std::make_unique<Model::Vertex[]>(4);
+    float quadVertices[] = {
+      // positions                          // texture Coords
+      -1.0f,  1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f,
+      -1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+       1.0f,  1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f,
+       1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f,
+    };
+
+    std::memcpy(vertices_ptr.get(), quadVertices, sizeof(quadVertices));
+
+    return vertices_ptr;
+  }
+
+  size_t GetVertexDataSize() const {
+    return Model::GetVertexStride() * 4;
+  }
+};
+
 class SphereModel {
 public:
   SphereModel(UINT x_segments, UINT y_segments) 

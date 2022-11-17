@@ -68,7 +68,8 @@ void Create2DTextureResource(ID3D12Device* pDevice, ID3D12GraphicsCommandList* p
   size_t width, UINT height, UINT16 mipLevels, DXGI_FORMAT format, D3D12_RESOURCE_FLAGS flags,
   ID3D12Resource** texture, LPCWSTR name, D3D12_RESOURCE_STATES initialState,
   bool needUpload, ID3D12Resource** textureUpload, void* textureData, size_t rowPitch, size_t slicePitch,
-  bool asSRV, const D3D12_CPU_DESCRIPTOR_HANDLE* srvCPUHandle);
+  bool asSRV, const D3D12_CPU_DESCRIPTOR_HANDLE* srvCPUHandle,
+  bool asRTV, const D3D12_CPU_DESCRIPTOR_HANDLE* rtvCPUHandle);
 
 // single cubemap texture
 void CreateCubeTextureResource(ID3D12Device* pDevice, ID3D12GraphicsCommandList* pCommandList,

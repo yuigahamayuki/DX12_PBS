@@ -47,6 +47,7 @@ private:
   void EquirectangularToCubemap();
   void ConvolveIrradianceMap();
   void PrefilterEnvironmentMap();
+  void PrecomputeBRDFLut();
 
   void CreateDescriptorHeaps(ID3D12Device* pDevice);
   void CreateRootSignatures(ID3D12Device* pDevice);
@@ -65,15 +66,16 @@ private:
   void EndFrame();
 
   UINT GetNumRtvDescriptors() const {
-    // 1st 6: 6 faces of skybox cubemap
-    // 2nd 6: 6 faces of irradiance cubemap
-    // 3nd: 6 * kPrefilterMapMipLevels of prefilter map
-    return m_frameCount + kCubeMapArraySize + kCubeMapArraySize + kCubeMapArraySize * kPrefilterMapMipLevels;
+    // 1st kCubeMapArraySize: 6 faces of skybox cubemap
+    // 2nd kCubeMapArraySize: 6 faces of irradiance cubemap
+    // kCubeMapArraySize * kPrefilterMapMipLevels: 6 * kPrefilterMapMipLevels of prefilter map
+    // 1: BRDF LUT
+    return m_frameCount + kCubeMapArraySize + kCubeMapArraySize + kCubeMapArraySize * kPrefilterMapMipLevels + 1;
   }
 
   UINT GetNumCbvSrvUavDescriptors() const {
-    // 1 hdr texture + 1 skybox cubemap + 1 irradiance map + kPrefilterMapMipLevels prefilter map
-    return 1 + 1 + 1 + kPrefilterMapMipLevels;
+    // 1 hdr texture + 1 skybox cubemap + 1 irradiance map + kPrefilterMapMipLevels prefilter map + 1 BRDF LUT
+    return 1 + 1 + 1 + kPrefilterMapMipLevels + 1;
   }
 
   inline CD3DX12_CPU_DESCRIPTOR_HANDLE GetCurrentBackBufferRtvCpuHandle() const {
@@ -89,6 +91,8 @@ private:
   static constexpr UINT kPrefilterMapWidth = 128;
   static constexpr UINT kPrefilterMapHeight = 128;
   static constexpr UINT kPrefilterMapMipLevels = 5;
+  static constexpr UINT kBRDFLutWidth = 512;
+  static constexpr UINT kBRDFLutHeight = 512;
 
   UINT m_frameCount = 0;
 
@@ -112,6 +116,8 @@ private:
   ComPtr<ID3D12PipelineState> m_pipelineStateSkybox;
   ComPtr<ID3D12PipelineState> m_pipelineStateIrradianceConvolution;
   ComPtr<ID3D12PipelineState> m_pipelineStatePrefilter;
+  ComPtr<ID3D12RootSignature> m_rootSignatureBRDFLut;
+  ComPtr<ID3D12PipelineState> m_pipelineStateBRDFLut;
   ComPtr<ID3D12RootSignature> m_rootSignatureScenePass;
   ComPtr<ID3D12PipelineState> m_pipelineStateScenePass;
   ComPtr<ID3D12Resource> m_vertexBufferCube;
@@ -122,6 +128,10 @@ private:
   ComPtr<ID3D12Resource> m_cubeMap;
   ComPtr<ID3D12Resource> m_irradianceMap;
   std::vector<ComPtr<ID3D12Resource>> m_prefilterMap;  // mipmap
+  ComPtr<ID3D12Resource> m_BRDFLut;
+  ComPtr<ID3D12Resource> m_vertexBufferQuad;
+  ComPtr<ID3D12Resource> m_vertexBufferQuadUpload;
+  D3D12_VERTEX_BUFFER_VIEW m_vertexBufferViewQuad{};
   ComPtr<ID3D12Resource> m_vertexBufferSphere;
   ComPtr<ID3D12Resource> m_vertexBufferSphereUpload;
   D3D12_VERTEX_BUFFER_VIEW m_vertexBufferViewSphere{};

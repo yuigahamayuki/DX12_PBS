@@ -28,12 +28,12 @@ PSInput VSMain(float3 position : POSITION, float3 normal : NORMAL, float2 uv : T
     translation.x,translation.y,translation.z,1.f
   };
   result.position = mul(inputPosition, instanceModel);
-  result.worldPos = result.position;
+  result.worldPos = (float3)result.position;
   result.position = mul(result.position, view);
   result.position = mul(result.position, projection);
 
   float4 inputNormal = float4(normal, 0.0f);
-  result.normal = mul(inputNormal, instanceModel);
+  result.normal = (float3)mul(inputNormal, instanceModel);
 
   result.camPos = camPos;
 
