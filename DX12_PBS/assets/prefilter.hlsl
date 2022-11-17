@@ -91,6 +91,7 @@ float4 PSMain(PSInput input) : SV_TARGET {
     float NdotL = max(dot(N, L), 0.0);
     if (NdotL > 0.0)
     {
+      L.y = -L.y;
       prefilteredColor += SkyboxMap.Sample(SkyboxSampler, L).rgb * NdotL;
       totalWeight += NdotL;
     }
