@@ -115,6 +115,7 @@ private:
   ComPtr<ID3D12PipelineState> m_pipelineStateEquirectangularToCubemap;
   ComPtr<ID3D12PipelineState> m_pipelineStateSkybox;
   ComPtr<ID3D12PipelineState> m_pipelineStateIrradianceConvolution;
+  ComPtr<ID3D12RootSignature> m_rootSignaturePrefilter;
   ComPtr<ID3D12PipelineState> m_pipelineStatePrefilter;
   ComPtr<ID3D12RootSignature> m_rootSignatureBRDFLut;
   ComPtr<ID3D12PipelineState> m_pipelineStateBRDFLut;

@@ -322,7 +322,7 @@ void PBSScene::ConvolveIrradianceMap() {
 }
 
 void PBSScene::PrefilterEnvironmentMap() {  
-  m_commandList->SetGraphicsRootSignature(m_rootSignatureScenePass.Get());
+  m_commandList->SetGraphicsRootSignature(m_rootSignaturePrefilter.Get());
   m_commandList->SetPipelineState(m_pipelineStatePrefilter.Get());
 
   CD3DX12_GPU_DESCRIPTOR_HANDLE skyboxGpuHandle(m_cbvSrvHeap->GetGPUDescriptorHandleForHeapStart());
@@ -383,6 +383,9 @@ void PBSScene::PrecomputeBRDFLut() {
   m_commandList->OMSetRenderTargets(1, &BRDFLutRTVHandle, false, nullptr);
 
   m_commandList->DrawInstanced(4, 1, 0, 0);
+
+  D3D12_RESOURCE_BARRIER BRDFLutResourceBarrier = CD3DX12_RESOURCE_BARRIER::Transition(m_BRDFLut.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+  m_commandList->ResourceBarrier(1, &BRDFLutResourceBarrier);
 }
 
 void PBSScene::InitializeCameraAndLights() {
@@ -435,7 +438,7 @@ void PBSScene::CreateRootSignatures(ID3D12Device* pDevice) {
   std::vector<util::SamplerDesc> samplerDescs;
   samplerDescs.emplace_back(util::SamplerDesc());
 
-  // Create a root signature for the equirectangular to cubemap.
+  // Create the root signature for the equirectangular to cubemap.
   {
     std::vector<util::DescriptorDesc> descriptorDescs;
     descriptorDescs.emplace_back(util::DescriptorType::kConstantBuffer, D3D12_SHADER_VISIBILITY_VERTEX, 1, 0);
@@ -451,13 +454,22 @@ void PBSScene::CreateRootSignatures(ID3D12Device* pDevice) {
     util::CreateRootSignature(pDevice, nullDescriptorDescs, nullSamplerDescs, &m_rootSignatureBRDFLut, L"m_rootSignatureBRDFLut");
   }
 
-  // Create a root signature for scene pass
+  // Create the root signature for prefilter.
   {
     std::vector<util::DescriptorDesc> descriptorDescs;
     descriptorDescs.emplace_back(util::DescriptorType::kConstantBuffer, D3D12_SHADER_VISIBILITY_ALL, 1, 0);
     descriptorDescs.emplace_back(util::DescriptorType::kConstantBuffer, D3D12_SHADER_VISIBILITY_PIXEL, 1, 1);
     descriptorDescs.emplace_back(util::DescriptorType::kShaderResourceView, D3D12_SHADER_VISIBILITY_PIXEL, 1, 0);
 
+    util::CreateRootSignature(pDevice, descriptorDescs, samplerDescs, &m_rootSignaturePrefilter, L"m_rootSignaturePrefilter");
+  }
+
+  // Create the root signature for scene pass.
+  {
+    std::vector<util::DescriptorDesc> descriptorDescs;
+    descriptorDescs.emplace_back(util::DescriptorType::kConstantBuffer, D3D12_SHADER_VISIBILITY_ALL, 1, 0);
+    descriptorDescs.emplace_back(util::DescriptorType::kConstantBuffer, D3D12_SHADER_VISIBILITY_PIXEL, 1, 1);
+    descriptorDescs.emplace_back(util::DescriptorType::kShaderResourceView, D3D12_SHADER_VISIBILITY_PIXEL, 1 + kPrefilterMapMipLevels + 1, 0);
     util::CreateRootSignature(pDevice, descriptorDescs, samplerDescs, &m_rootSignatureScenePass, L"m_rootSignatureScenePass");
   }
 }
@@ -519,7 +531,7 @@ void PBSScene::CreatePipelineStates(ID3D12Device* pDevice) {
   // Create the pipeline state for generating prefilter map.
   {
     util::CreatePipelineState(pDevice, m_pSample, L"assets/prefilter.hlsl", standardInputElementDescs,
-      m_rootSignatureScenePass.Get(), floatRtvFormats,
+      m_rootSignaturePrefilter.Get(), floatRtvFormats,
       false, D3D12_COMPARISON_FUNC_LESS,
       &m_pipelineStatePrefilter, L"m_pipelineStatePrefilter");
   }

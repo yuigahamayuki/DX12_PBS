@@ -90,7 +90,7 @@ void CreatePipelineState(ID3D12Device* pDevice, DXSample* pSample, LPCWSTR shade
   ComPtr<ID3DBlob> vertexShader;
   ComPtr<ID3DBlob> pixelShader;
   vertexShader = CompileShader(pSample->GetAssetFullPath(shaderFilePath).c_str(), nullptr, "VSMain", "vs_5_0");
-  pixelShader = CompileShader(pSample->GetAssetFullPath(shaderFilePath).c_str(), nullptr, "PSMain", "ps_5_0");
+  pixelShader = CompileShader(pSample->GetAssetFullPath(shaderFilePath).c_str(), nullptr, "PSMain", "ps_5_1");
 
   D3D12_INPUT_LAYOUT_DESC inputLayoutDesc{};
   inputLayoutDesc.pInputElementDescs = inputElementDescs.data();

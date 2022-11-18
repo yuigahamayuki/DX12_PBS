@@ -53,8 +53,12 @@ cbuffer LightStatesConstantBuffer : register(b1)
   LightState lights[NUM_LIGHTS];
 };
 
+#define PREFILTER_MIP_LEVEL 5
+
 TextureCube irradianceMap : register(t0);
-SamplerState irradianceMapSampler : register(s0);
+TextureCube prefilterMap[PREFILTER_MIP_LEVEL] : register(t1);
+Texture2D brdfLutTexture : register(t6);
+SamplerState basicSampler : register(s0);
 
 static const float PI = 3.14159265359;
 
@@ -137,12 +141,28 @@ float4 PSMain(PSInput input) : SV_TARGET {
     Lo += (kD * albedo / PI + specular) * radiance * NdotL;
   }
 
-  float3 kS = fresnelSchlick(max(dot(N, V), 0.0), F0);
+  float3 F = fresnelSchlick(max(dot(N, V), 0.0), F0);
+
+  // diffuse indirect
+  float3 kS = F;
   float3 kD = 1.0 - kS;
   kD *= 1.0 - input.metallic;
-  float3 irradiance = irradianceMap.Sample(irradianceMapSampler, N).rgb;
+  float3 irradiance = irradianceMap.Sample(basicSampler, N).rgb;
   float3 diffuse = irradiance * albedo;
-  float3 ambient = kD * diffuse;
+
+  // specular indirect
+  const float MAX_REFLECTION_LOD = 4.0f;
+  float roughnessLevel = input.roughness * MAX_REFLECTION_LOD;
+  const int floorLevel = floor(roughnessLevel);
+  const int ceilLevel = ceil(roughnessLevel);
+  float3 R = reflect(-V, N);
+  float3 floorPrefilter = prefilterMap[floorLevel].Sample(basicSampler, R).rgb;
+  float3 ceilPrefilter = prefilterMap[ceilLevel].Sample(basicSampler, R).rgb;
+  float3 prefilteredColor = lerp(floorPrefilter, ceilPrefilter, roughnessLevel - floorLevel);
+  float2 brdf = brdfLutTexture.Sample(basicSampler, float2(max(dot(N, V), 0.0), input.roughness)).rg;
+  float3 specular = prefilteredColor * (F * brdf.x + brdf.y);
+
+  float3 ambient = kD * diffuse + specular;
 
   float3 color = ambient + Lo;
 
